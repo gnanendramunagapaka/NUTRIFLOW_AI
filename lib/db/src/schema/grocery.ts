@@ -1,16 +1,18 @@
 import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { userProfilesTable } from "./profile";
 
 export const groceryListsTable = pgTable("grocery_lists", {
   id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => userProfilesTable.id, { onDelete: "cascade" }),
   weekOf: text("week_of").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const groceryItemsTable = pgTable("grocery_items", {
   id: serial("id").primaryKey(),
-  listId: integer("list_id").notNull().references(() => groceryListsTable.id),
+  listId: integer("list_id").notNull().references(() => groceryListsTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   category: text("category").notNull(),
   quantity: text("quantity").notNull(),

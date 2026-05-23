@@ -200,11 +200,19 @@ export const ToggleGroceryItemResponse = zod.object({
 export const GetProfileResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
+  "email": zod.string(),
+  "isEmailVerified": zod.boolean(),
+  "onboardingCompleted": zod.boolean(),
   "age": zod.number().nullish(),
   "weight": zod.number().nullish(),
   "height": zod.number().nullish(),
   "goal": zod.string(),
   "dietaryPreferences": zod.array(zod.string()),
+  "allergies": zod.array(zod.string()),
+  "workoutFrequency": zod.string().nullish(),
+  "waterIntake": zod.string().nullish(),
+  "mealHabits": zod.string().nullish(),
+  "budget": zod.string().nullish(),
   "wellnessScore": zod.number(),
   "streak": zod.number(),
   "avatarUrl": zod.string().nullish()
@@ -220,17 +228,31 @@ export const UpdateProfileBody = zod.object({
   "weight": zod.number().optional(),
   "height": zod.number().optional(),
   "goal": zod.string().optional(),
-  "dietaryPreferences": zod.array(zod.string()).optional()
+  "dietaryPreferences": zod.array(zod.string()).optional(),
+  "allergies": zod.array(zod.string()).optional(),
+  "onboardingCompleted": zod.boolean().optional(),
+  "workoutFrequency": zod.string().optional(),
+  "waterIntake": zod.string().optional(),
+  "mealHabits": zod.string().optional(),
+  "budget": zod.string().optional()
 })
 
 export const UpdateProfileResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
+  "email": zod.string(),
+  "isEmailVerified": zod.boolean(),
+  "onboardingCompleted": zod.boolean(),
   "age": zod.number().nullish(),
   "weight": zod.number().nullish(),
   "height": zod.number().nullish(),
   "goal": zod.string(),
   "dietaryPreferences": zod.array(zod.string()),
+  "allergies": zod.array(zod.string()),
+  "workoutFrequency": zod.string().nullish(),
+  "waterIntake": zod.string().nullish(),
+  "mealHabits": zod.string().nullish(),
+  "budget": zod.string().nullish(),
   "wellnessScore": zod.number(),
   "streak": zod.number(),
   "avatarUrl": zod.string().nullish()

@@ -1,49 +1,81 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+# ============================================================
+# NutriFlow AI — .gitignore
+# ============================================================
 
-# compiled output
-dist
-tmp
-out-tsc
+# ─── Environment Variables & Secrets ──────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+*.env
+
+# ─── Dependencies ─────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ─── Build Output ─────────────────────────────────────────
+dist/
+dist-ssr/
+build/
+out/
+out-tsc/
 *.tsbuildinfo
 .expo
 .expo-shared
 
-# dependencies
-node_modules
+# ─── Temporary / Debug ────────────────────────────────────
+tmp/
+temp/
+.tmp/
+*.log
+npm-debug.log*
+yarn-error.log
+pnpm-debug.log*
 
-# IDEs and editors
-/.idea
+# ─── Database Temp (local PostgreSQL instance) ────────────
+db-temp/
+
+# ─── IDEs & Editors ───────────────────────────────────────
+.idea/
 .project
 .classpath
 .c9/
 *.launch
 .settings/
 *.sublime-workspace
-
-# IDE - VSCode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# misc
-/.sass-cache
+# ─── System Files ─────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.sass-cache
 /connect.lock
 /coverage
 /libpeerconnection.log
-npm-debug.log
-yarn-error.log
 testem.log
 /typings
 
-# System Files
-.DS_Store
-Thumbs.db
-
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
-
-# Replit
+# ─── Replit Specific ──────────────────────────────────────
 .cache/
 .local/
+.agents/
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+.replitignore
+.replit
+.replit-artifact/
+
+# ─── Lock files (keep pnpm-lock.yaml, ignore npm/yarn) ───
+package-lock.json
+yarn.lock
+
+# ─── Misc ─────────────────────────────────────────────────
+/coverage
+*.orig
+*.rej

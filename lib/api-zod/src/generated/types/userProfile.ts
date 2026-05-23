@@ -9,6 +9,9 @@
 export interface UserProfile {
   id: number;
   name: string;
+  email: string;
+  isEmailVerified: boolean;
+  onboardingCompleted: boolean;
   /** @nullable */
   age?: number | null;
   /** @nullable */
@@ -17,6 +20,15 @@ export interface UserProfile {
   height?: number | null;
   goal: string;
   dietaryPreferences: string[];
+  allergies: string[];
+  /** @nullable */
+  workoutFrequency?: string | null;
+  /** @nullable */
+  waterIntake?: string | null;
+  /** @nullable */
+  mealHabits?: string | null;
+  /** @nullable */
+  budget?: string | null;
   wellnessScore: number;
   streak: number;
   /** @nullable */

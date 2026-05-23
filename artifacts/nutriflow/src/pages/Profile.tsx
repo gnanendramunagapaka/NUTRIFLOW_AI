@@ -1,20 +1,18 @@
 import { Layout } from "@/components/layout/Layout";
-import { useGetProfile, useUpdateProfile, getGetProfileQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useForm } from "react-hook-form";
-import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Profile() {
-  const { data: profile, isLoading } = useGetProfile();
-  const updateProfile = useUpdateProfile();
-  const queryClient = useQueryClient();
+  const { user: profile, updateOnboarding, loading: isLoading } = useAuth();
+  const [isSaving, setIsSaving] = useState(false);
   const { toast } = useToast();
 
   const { register, handleSubmit, reset } = useForm({
@@ -39,22 +37,26 @@ export default function Profile() {
     }
   }, [profile, reset]);
 
-  const onSubmit = (data: any) => {
-    updateProfile.mutate({
-      data: {
+  const onSubmit = async (data: any) => {
+    setIsSaving(true);
+    try {
+      await updateOnboarding({
         name: data.name,
         age: data.age ? Number(data.age) : undefined,
         weight: data.weight ? Number(data.weight) : undefined,
         height: data.height ? Number(data.height) : undefined,
-        goal: data.goal,
-      }
-    }, {
-      onSuccess: () => {
-        toast({ title: "Profile updated successfully" });
-        queryClient.invalidateQueries({ queryKey: getGetProfileQueryKey() });
-      }
-    });
+        goals: data.goal ? [data.goal] : undefined,
+      });
+      toast({ title: "Profile updated successfully" });
+    } catch (err: any) {
+      toast({ title: "Failed to update profile", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  // Safe avatar initials
+  const initials = ((profile?.name || "U").trim().substring(0, 2)).toUpperCase();
 
   return (
     <Layout>
@@ -75,11 +77,13 @@ export default function Profile() {
               <CardContent className="p-8 flex flex-col sm:flex-row items-center gap-6">
                 <Avatar className="h-24 w-24 border-4 border-background shadow-sm">
                   <AvatarImage src={profile.avatarUrl || ""} />
-                  <AvatarFallback className="text-2xl">{profile.name.substring(0,2).toUpperCase()}</AvatarFallback>
+                  <AvatarFallback className="text-2xl">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="text-center sm:text-left space-y-1">
-                  <h2 className="text-2xl font-bold">{profile.name}</h2>
-                  <p className="text-muted-foreground">Wellness Score: <span className="text-primary font-bold">{profile.wellnessScore}</span></p>
+                  <h2 className="text-2xl font-bold">{profile.name || "User"}</h2>
+                  <p className="text-muted-foreground">
+                    Wellness Score: <span className="text-primary font-bold">{profile.wellnessScore}</span>
+                  </p>
                 </div>
                 <div className="sm:ml-auto flex gap-4">
                   <div className="bg-background px-4 py-2 rounded-xl text-center shadow-sm">
@@ -98,34 +102,38 @@ export default function Profile() {
                 <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Full Name</Label>
-                      <Input id="name" {...register("name")} />
+                      <Label htmlFor="profile-name">Full Name</Label>
+                      <Input id="profile-name" {...register("name")} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="goal">Primary Goal</Label>
-                      <Input id="goal" {...register("goal")} />
+                      <Label htmlFor="profile-goal">Primary Goal</Label>
+                      <Input id="profile-goal" {...register("goal")} placeholder="e.g. Weight Loss" />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="age">Age</Label>
-                      <Input id="age" type="number" {...register("age")} />
+                      <Label htmlFor="profile-age">Age</Label>
+                      <Input id="profile-age" type="number" {...register("age")} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="weight">Weight (kg)</Label>
-                      <Input id="weight" type="number" {...register("weight")} />
+                      <Label htmlFor="profile-weight">Weight (kg)</Label>
+                      <Input id="profile-weight" type="number" {...register("weight")} />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="height">Height (cm)</Label>
-                      <Input id="height" type="number" {...register("height")} />
+                      <Label htmlFor="profile-height">Height (cm)</Label>
+                      <Input id="profile-height" type="number" {...register("height")} />
                     </div>
                   </div>
-                  <Button type="submit" disabled={updateProfile.isPending}>
-                    {updateProfile.isPending ? "Saving..." : "Save Changes"}
+                  <Button type="submit" disabled={isSaving}>
+                    {isSaving ? "Saving..." : "Save Changes"}
                   </Button>
                 </form>
               </CardContent>
             </Card>
           </>
-        ) : null}
+        ) : (
+          <div className="text-center p-12 rounded-xl border border-dashed">
+            <p className="text-muted-foreground">Unable to load profile. Please try refreshing.</p>
+          </div>
+        )}
       </div>
     </Layout>
   );

@@ -1,11 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout/Layout";
 import { useListMeals, ListMealsFilter } from "@workspace/api-client-react";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search } from "lucide-react";
+import { Search, ShoppingCart, Heart } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCart } from "@/hooks/use-cart";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabaseClient";
 
 const filters: { label: string; value: ListMealsFilter | "all" }[] = [
   { label: "All", value: "all" },
@@ -18,11 +22,113 @@ const filters: { label: string; value: ListMealsFilter | "all" }[] = [
 export default function Discover() {
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<ListMealsFilter | "all">("all");
+  const { addToCart, setIsCartOpen } = useCart();
+  const { toast } = useToast();
+  
+  const [savedMeals, setSavedMeals] = useState<any[]>([]);
+
+  const loadSavedMeals = async () => {
+    try {
+      const { data: { user: sbUser } } = await supabase.auth.getUser();
+      if (!sbUser) {
+        setSavedMeals([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("saved_meals")
+        .select("*")
+        .eq("user_id", sbUser.id)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.warn("[Discover] saved_meals fetch error (non-critical):", error.message);
+        setSavedMeals([]);
+        return;
+      }
+
+      setSavedMeals(data || []);
+      console.log("[Discover] Loaded", data?.length ?? 0, "saved meals");
+    } catch (e) {
+      console.warn("[Discover] loadSavedMeals failed (non-critical):", e);
+      setSavedMeals([]);
+    }
+  };
+
+  useEffect(() => {
+    loadSavedMeals();
+  }, []);
+
+
+  const toggleSaveMeal = async (meal: any) => {
+    const isSaved = savedMeals.some((sm: any) => sm.meal_id === meal.id || sm.name === meal.name);
+    try {
+      const { data: { user: sbUser } } = await supabase.auth.getUser();
+      if (!sbUser) return;
+
+      if (isSaved) {
+        const target = savedMeals.find((sm: any) => sm.meal_id === meal.id || sm.name === meal.name);
+        if (target) {
+          const { error } = await supabase
+            .from("saved_meals")
+            .delete()
+            .eq("id", target.id);
+          if (error) throw error;
+        }
+        toast({ title: "Removed from Saved Meals ❤️" });
+      } else {
+        const { error } = await supabase
+          .from("saved_meals")
+          .insert({
+            user_id: sbUser.id,
+            meal_id: meal.id,
+            name: meal.name,
+            description: meal.description || "",
+            image_url: meal.imageUrl || "",
+            calories: meal.calories,
+            protein: meal.protein,
+            carbs: meal.carbs,
+            fat: meal.fat,
+            health_score: meal.healthScore,
+            price: meal.price,
+          });
+        if (error) throw error;
+        toast({ title: "Added to Saved Meals ❤️" });
+      }
+      await loadSavedMeals();
+    } catch (e) {
+      console.error("Failed to toggle saved meal:", e);
+      toast({ title: "Operation failed", variant: "destructive" });
+    }
+  };
 
   const { data: meals, isLoading } = useListMeals({
     search: search || undefined,
     filter: activeFilter === "all" ? undefined : activeFilter
   });
+
+  const handleAddToCart = (meal: any) => {
+    addToCart({
+      id: `meal-db-${meal.id}`,
+      name: meal.name,
+      price: meal.price,
+      type: 'meal',
+      calories: meal.calories,
+      protein: meal.protein,
+      carbs: meal.carbs,
+      fat: meal.fat,
+      healthScore: meal.healthScore,
+      imageUrl: meal.imageUrl,
+      cuisine: meal.cuisine,
+      description: meal.description,
+    });
+    toast({
+      title: "Added to Cart! 🛒",
+      description: `"${meal.name}" added to Swiggy commerce basket.`,
+    });
+    setIsCartOpen(true);
+  };
+
 
   return (
     <Layout>
@@ -78,29 +184,53 @@ export default function Discover() {
                       AI Pick
                     </div>
                   )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSaveMeal(meal);
+                    }}
+                    className={cn(
+                      "absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all shadow-md z-10",
+                      savedMeals.some((sm: any) => sm.meal_id === meal.id || sm.name === meal.name)
+                        ? "bg-red-500/90 text-white hover:bg-red-600/90"
+                        : "bg-black/40 text-white/90 hover:bg-black/60"
+                    )}
+                  >
+                    <Heart className={cn("h-4 w-4", savedMeals.some((sm: any) => sm.meal_id === meal.id || sm.name === meal.name) && "fill-current")} />
+                  </button>
                 </div>
                 <CardHeader className="p-4 pb-2">
                   <div className="flex justify-between items-start gap-2">
                     <CardTitle className="text-lg leading-tight line-clamp-2">{meal.name}</CardTitle>
-                    <span className="font-bold text-primary">${meal.price}</span>
+                    <span className="font-bold text-primary">₹{meal.price}</span>
                   </div>
                 </CardHeader>
-                <CardContent className="p-4 pt-0 space-y-3 text-sm">
-                  <p className="text-muted-foreground line-clamp-2">{meal.description}</p>
-                  <div className="flex gap-4 text-xs font-medium text-foreground/70">
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground">Calories</span>
-                      <span>{meal.calories}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground">Protein</span>
-                      <span>{meal.protein}g</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-muted-foreground">Carbs</span>
-                      <span>{meal.carbs}g</span>
+                <CardContent className="p-4 pt-0 space-y-3 text-sm flex flex-col justify-between h-[calc(100%-14rem)]">
+                  <div className="space-y-3">
+                    <p className="text-muted-foreground line-clamp-2 text-xs">{meal.description}</p>
+                    <div className="flex gap-4 text-[11px] font-medium text-foreground/70">
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground text-[10px]">Calories</span>
+                        <span>{meal.calories} kcal</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground text-[10px]">Protein</span>
+                        <span>{meal.protein}g</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-muted-foreground text-[10px]">Carbs</span>
+                        <span>{meal.carbs}g</span>
+                      </div>
                     </div>
                   </div>
+                  
+                  <Button
+                    onClick={() => handleAddToCart(meal)}
+                    className="w-full mt-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all hover-elevate h-9 text-xs"
+                  >
+                    <ShoppingCart className="h-3.5 w-3.5" />
+                    Add to Cart
+                  </Button>
                 </CardContent>
               </Card>
             ))}

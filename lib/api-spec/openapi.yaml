@@ -573,6 +573,12 @@ components:
           type: integer
         name:
           type: string
+        email:
+          type: string
+        isEmailVerified:
+          type: boolean
+        onboardingCompleted:
+          type: boolean
         age:
           type: ["integer", "null"]
         weight:
@@ -585,6 +591,18 @@ components:
           type: array
           items:
             type: string
+        allergies:
+          type: array
+          items:
+            type: string
+        workoutFrequency:
+          type: ["string", "null"]
+        waterIntake:
+          type: ["string", "null"]
+        mealHabits:
+          type: ["string", "null"]
+        budget:
+          type: ["string", "null"]
         wellnessScore:
           type: integer
         streak:
@@ -594,8 +612,12 @@ components:
       required:
         - id
         - name
+        - email
+        - isEmailVerified
+        - onboardingCompleted
         - goal
         - dietaryPreferences
+        - allergies
         - wellnessScore
         - streak
 
@@ -616,6 +638,20 @@ components:
           type: array
           items:
             type: string
+        allergies:
+          type: array
+          items:
+            type: string
+        onboardingCompleted:
+          type: boolean
+        workoutFrequency:
+          type: string
+        waterIntake:
+          type: string
+        mealHabits:
+          type: string
+        budget:
+          type: string
 
     WellnessSummary:
       type: object

@@ -13,4 +13,10 @@ export interface UserProfileInput {
   height?: number;
   goal?: string;
   dietaryPreferences?: string[];
+  allergies?: string[];
+  onboardingCompleted?: boolean;
+  workoutFrequency?: string;
+  waterIntake?: string;
+  mealHabits?: string;
+  budget?: string;
 }

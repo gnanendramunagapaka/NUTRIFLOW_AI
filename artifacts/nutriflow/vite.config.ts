@@ -28,6 +28,14 @@ if (!basePath) {
 
 export default defineConfig({
   base: basePath,
+  define: {
+    // Supabase credentials are loaded from environment variables.
+    // For local development: create a .env.local file (see .env.example).
+    // For production: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your deployment environment.
+    "process.env.NEXT_PUBLIC_SUPABASE_URL": JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_URL || ""),
+    "process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY": JSON.stringify(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""),
+  },
+
   plugins: [
     react(),
     tailwindcss(),
