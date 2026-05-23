@@ -1,0 +1,405 @@
+You are a senior full-stack architect, AI product engineer, and modern UI/UX designer.
+
+Build a COMPLETE production-quality MVP starter project for an AI-powered wellness copilot application called:
+
+# NutriFlow AI
+
+GOAL:
+Create a polished, modern, AI-native commerce application focused on healthy food discovery, AI nutrition assistance, grocery planning, and wellness recommendations.
+
+IMPORTANT CONTEXT:
+
+* This is NOT a startup-scale enterprise system.
+* This is a portfolio-quality real-world MVP project intended to impress companies like Swiggy, Zepto, Zomato, HealthifyMe, and AI startups.
+* Focus heavily on:
+
+  * clean UI/UX
+  * practical AI workflows
+  * modern frontend architecture
+  * simple but believable AI interactions
+  * polished product feel
+* The application should feel like:
+
+  * Swiggy + Apple Health + ChatGPT
+* Mobile-first responsive design is extremely important.
+* Keep the experience SIMPLE, CLEAN, and NON-CONFUSING.
+
+==================================================
+TECH STACK
+==========
+
+Frontend:
+
+* Next.js 14 (App Router)
+* TypeScript
+* Tailwind CSS
+* shadcn/ui
+* Framer Motion
+
+Backend:
+
+* Spring Boot
+* REST APIs
+* Maven
+
+Database:
+
+* PostgreSQL
+
+AI:
+
+* OpenAI APIs
+
+==================================================
+PRODUCT PHILOSOPHY
+==================
+
+The product should feel like:
+“AI Wellness Copilot”
+
+NOT:
+
+* medical software
+* complicated analytics dashboard
+* futuristic AI overload
+* enterprise admin panel
+
+The AI should:
+
+* assist users
+* recommend meals
+* suggest groceries
+* explain health insights
+
+BUT:
+
+* users always manually confirm important actions
+
+==================================================
+MAIN FEATURES
+=============
+
+1. Landing Page
+2. Login / Signup UI
+3. Home Dashboard
+4. AI Nutrition Assistant Chat
+5. Healthy Meal Discovery
+6. Grocery Planner
+7. Profile & Wellness Tracking
+
+==================================================
+DESIGN SYSTEM REQUIREMENTS
+==========================
+
+Design Style:
+
+* Minimal
+* Premium
+* Comfortable
+* Swiggy-inspired simplicity
+* Apple Health inspired wellness visuals
+* ChatGPT-like conversational AI feel
+
+Colors:
+
+* White background
+* Soft green accents
+* Light orange highlights
+* Minimal dark sections
+
+UI Components:
+
+* Rounded cards
+* Soft shadows
+* Clean typography
+* Spacious layout
+* Smooth scrolling
+* Large buttons
+* Modern responsive navbar
+
+Avoid:
+
+* clutter
+* too many charts
+* overwhelming analytics
+* excessive text
+* futuristic cyberpunk design
+
+==================================================
+LANDING PAGE REQUIREMENTS
+=========================
+
+Sections:
+
+1. Hero Section
+2. AI Workflow Preview
+3. Feature Highlights
+4. Healthy Recommendation Preview
+5. Grocery Planning Preview
+6. AI Assistant Preview
+7. CTA Section
+
+Hero Text Example:
+“Your AI Wellness Copilot”
+
+Include:
+
+* premium hero layout
+* modern gradients
+* animated sections
+* responsive design
+* clean CTA buttons
+
+==================================================
+HOME DASHBOARD REQUIREMENTS
+===========================
+
+Create a beautiful modern dashboard with:
+
+1. Greeting Section
+   Example:
+   “Good Evening, Gnanendra 👋”
+
+2. AI Wellness Insight Card
+   Example:
+   “You’ve been low on protein intake this week.”
+
+3. Meal Recommendation Cards
+   Each card should contain:
+
+* food image
+* calories
+* protein
+* health score
+* order button
+
+4. Quick Action Buttons
+
+* Ask AI
+* Suggest Healthy Dinner
+* Build Grocery List
+* Scan Food
+
+5. Healthy Restaurant Feed
+   Horizontal scrolling cards like Swiggy.
+
+6. Minimal Wellness Summary
+
+* protein intake
+* water intake
+* consistency streak
+
+==================================================
+AI ASSISTANT PAGE REQUIREMENTS
+==============================
+
+Build a modern conversational AI interface.
+
+Features:
+
+* ChatGPT-style layout
+* Suggested prompts
+* AI recommendation cards
+* Meal recommendation flow
+* Grocery planning flow
+* Nutrition guidance
+
+Suggested Prompts:
+
+* “Suggest healthy dinner under ₹300”
+* “Create muscle gain meal plan”
+* “Build weekly grocery list”
+* “Suggest diabetic-friendly meals”
+
+AI responses should include:
+
+* modern cards
+* nutrition breakdown
+* meal recommendations
+* clean UI formatting
+
+==================================================
+DISCOVER PAGE REQUIREMENTS
+==========================
+
+Build a Swiggy-style healthy food discovery page.
+
+Features:
+
+* Search bar
+* Filter chips
+* Restaurant feed
+* Healthy recommendation badges
+
+Filters:
+
+* High Protein
+* Low Carb
+* Budget Meals
+* Diabetic Friendly
+* Gym Meals
+
+Meal Cards:
+
+* image
+* calories
+* protein
+* health score
+* cuisine
+* delivery time
+* AI Recommended badge
+
+==================================================
+GROCERY PAGE REQUIREMENTS
+=========================
+
+Features:
+
+* AI-generated grocery lists
+* Weekly grocery planner
+* Grocery categories
+* Nutrition-based suggestions
+* Simple clean UI
+
+==================================================
+PROFILE PAGE REQUIREMENTS
+=========================
+
+Features:
+
+* Wellness score
+* Streak tracking
+* Goal progress
+* Dietary preferences
+* Minimal analytics
+* Settings section
+
+==================================================
+BACKEND REQUIREMENTS
+====================
+
+Generate complete Spring Boot starter architecture including:
+
+* Controllers
+* Services
+* DTOs
+* Entities
+* Repositories
+* API structure
+* Mock data support
+* OpenAI integration structure
+
+Generate sample APIs:
+
+GET /recommendations
+POST /chat
+GET /meal-plan
+POST /grocery-plan
+GET /restaurants
+
+==================================================
+DATABASE SCHEMA
+===============
+
+Generate PostgreSQL schema for:
+
+* users
+* meal_recommendations
+* restaurants
+* grocery_items
+* user_preferences
+* wellness_tracking
+
+==================================================
+MOCK DATA REQUIREMENTS
+======================
+
+Generate realistic mock data for:
+
+* restaurants
+* healthy meals
+* grocery items
+* nutrition values
+* AI recommendations
+
+==================================================
+PROJECT STRUCTURE
+=================
+
+Generate complete folder structures for:
+
+Frontend:
+
+* app/
+* components/
+* features/
+* services/
+* hooks/
+* utils/
+
+Backend:
+
+* controller/
+* service/
+* repository/
+* dto/
+* entity/
+* config/
+
+==================================================
+IMPORTANT UX REQUIREMENTS
+=========================
+
+The application MUST feel:
+
+* polished
+* believable
+* practical
+* modern
+* simple
+
+The UI experience should impress product companies immediately.
+
+Focus heavily on:
+
+* user flow
+* spacing
+* component consistency
+* smooth interaction design
+* premium visual quality
+
+==================================================
+DO NOT INCLUDE
+==============
+
+* enterprise microservices complexity
+* admin dashboards
+* overly advanced analytics
+* unrealistic AGI features
+* complicated infrastructure
+* blockchain/web3
+* unnecessary animations
+* excessive medical claims
+
+==================================================
+OUTPUT REQUIREMENTS
+===================
+
+Provide:
+
+1. Complete architecture
+2. Folder structures
+3. Frontend structure
+4. Backend structure
+5. Database schema
+6. API design
+7. Modern UI components
+8. Responsive layouts
+9. Mock data
+10. AI workflow logic
+11. Starter code scaffolding
+12. MVP implementation plan
+13. Setup instructions
+14. Production-quality component examples
+
+The final result should look and feel like a modern AI-native product built by a strong product engineer.

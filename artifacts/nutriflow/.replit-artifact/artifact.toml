@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "NutriFlow AI"
+version = "1.0.0"
+id = "artifacts/nutriflow"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24819
+
+[services.development]
+run = "pnpm --filter @workspace/nutriflow run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/nutriflow", "run", "build" ]
+publicDir = "artifacts/nutriflow/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24819"
+BASE_PATH = "/"
