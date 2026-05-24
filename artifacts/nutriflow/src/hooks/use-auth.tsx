@@ -358,7 +358,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
       options: { 
         data: { name },
-        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined
+        emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined
       },
     });
     if (error) throw new Error(error.message);

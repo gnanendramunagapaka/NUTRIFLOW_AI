@@ -12,6 +12,7 @@ import Discover from "@/pages/Discover";
 import Grocery from "@/pages/Grocery";
 import Profile from "@/pages/Profile";
 import VerifyEmail from "@/pages/VerifyEmail";
+import AuthCallback from "@/pages/AuthCallback";
 import Checkout from "@/pages/Checkout";
 import OrderConfirmation from "@/pages/OrderConfirmation";
 import NotFound from "@/pages/not-found";
@@ -37,6 +38,7 @@ function Router() {
       <Route path="/login" component={() => <GuestRoute component={Login} />} />
       <Route path="/onboarding" component={() => <OnboardingRoute component={Onboarding} />} />
       <Route path="/verify-email" component={VerifyEmail} />
+      <Route path="/auth/callback" component={AuthCallback} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
       <Route path="/discover" component={() => <ProtectedRoute component={Discover} />} />

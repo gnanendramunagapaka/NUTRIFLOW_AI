@@ -46,6 +46,34 @@ export default function VerifyEmail() {
     return () => subscription.unsubscribe();
   }, [refreshUser, toast]);
 
+  // Automatic session recovery: poll Supabase every 3 seconds to check if the session is verified
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+
+    async function checkVerification() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user.email_confirmed_at) {
+          await refreshUser();
+          toast({
+            title: "Email Verified! 🎉",
+            description: "Automatically continuing to your setup...",
+          });
+        }
+      } catch (err) {
+        console.warn("[VerifyEmail] Automatic verification check failed:", err);
+      }
+    }
+
+    if (!supabaseUser || !supabaseUser.email_confirmed_at) {
+      interval = setInterval(checkVerification, 3000);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [supabaseUser, refreshUser, toast]);
+
   // Resend cooldown timer
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -67,7 +95,7 @@ export default function VerifyEmail() {
         type: "signup",
         email: targetEmail,
         options: {
-          emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined
+          emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined
         }
       });
 
@@ -130,11 +158,39 @@ export default function VerifyEmail() {
               onClick={async () => {
                 setIsChecking(true);
                 try {
+                  // 1. Fetch fresh session status
+                  const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+                  if (sessionErr) throw sessionErr;
+
+                  // 2. Refresh the user profile context
                   await refreshUser();
-                  toast({
-                    title: "Checking Status...",
-                    description: "Queried the latest verification status from Supabase."
-                  });
+
+                  // 3. Query user profiles to check onboarding completed
+                  let onboarded = false;
+                  if (session?.user) {
+                    const { data: profile } = await supabase
+                      .from("user_profiles")
+                      .select("onboarding_completed")
+                      .eq("id", session.user.id)
+                      .maybeSingle();
+                    if (profile) {
+                      onboarded = profile.onboarding_completed;
+                    }
+                  }
+
+                  if (session?.user?.email_confirmed_at) {
+                    toast({
+                      title: "Verification Successful! 🎉",
+                      description: "Taking you to the app...",
+                    });
+                    setLocation(onboarded ? "/dashboard" : "/onboarding");
+                  } else {
+                    toast({
+                      title: "Email Not Confirmed Yet",
+                      description: "Please check your inbox or spam folder and click the verification link.",
+                      variant: "destructive",
+                    });
+                  }
                 } catch (e: any) {
                   toast({
                     title: "Status Check Failed",
