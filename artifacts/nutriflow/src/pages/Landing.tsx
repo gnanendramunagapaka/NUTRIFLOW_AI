@@ -1,9 +1,24 @@
 import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { motion } from "framer-motion";
+import { useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function Landing() {
+  const { user, supabaseUser, onboarded } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (user) {
+      if (supabaseUser && !supabaseUser.email_confirmed_at) {
+        setLocation(`/verify-email?email=${encodeURIComponent(supabaseUser.email || "")}`);
+      } else {
+        setLocation(onboarded ? "/dashboard" : "/onboarding");
+      }
+    }
+  }, [user, supabaseUser, onboarded, setLocation]);
+
   return (
     <Layout>
       <div className="flex flex-col min-h-screen">

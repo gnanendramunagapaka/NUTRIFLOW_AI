@@ -23,8 +23,8 @@ export default function VerifyEmail() {
 
   // Auto redirect if user profile exists and is verified
   useEffect(() => {
-    if (supabaseUser && supabaseUser.email_confirmed_at) {
-      if (user?.onboardingCompleted) {
+    if (supabaseUser && supabaseUser.email_confirmed_at && user) {
+      if (user.onboardingCompleted) {
         setLocation("/dashboard");
       } else {
         setLocation("/onboarding");

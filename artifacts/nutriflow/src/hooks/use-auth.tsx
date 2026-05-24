@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useQueryClient } from "@tanstack/react-query";
@@ -134,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
+  const lastProcessedUserRef = useRef<string | null>(null);
 
   // Build fallback user from Supabase session
   const buildFallbackUser = (session: any, onboardingCompleted = true): User => {
@@ -261,8 +262,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!session) {
         setUser(null);
         setSupabaseUser(null);
+        lastProcessedUserRef.current = null;
         return;
       }
+
+      const userId = session.user.id;
+      if (lastProcessedUserRef.current === userId && user) {
+        // Already loaded profile for this user
+        setSupabaseUser(session.user);
+        return;
+      }
+      lastProcessedUserRef.current = userId;
 
       setSupabaseUser(session.user);
       const profileUser = await fetchOrCreateProfile(session);
@@ -292,10 +302,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen to auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[Auth] State change:", event);
+      console.log("[Auth] State change:", event, session?.user?.id);
 
       if (session) {
+        const userId = session.user.id;
         setSupabaseUser(session.user);
+        
+        if (lastProcessedUserRef.current === userId && user) {
+          // Already processing/processed this user
+          setLoading(false);
+          return;
+        }
+        lastProcessedUserRef.current = userId;
+
         try {
           const profileUser = await fetchOrCreateProfile(session);
           setUser(profileUser);
@@ -303,6 +322,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("[Auth] onAuthStateChange profile error:", err);
         }
       } else {
+        lastProcessedUserRef.current = null;
         setSupabaseUser(null);
         setUser(null);
         try {

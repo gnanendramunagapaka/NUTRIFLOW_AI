@@ -17,7 +17,7 @@ import OrderConfirmation from "@/pages/OrderConfirmation";
 import NotFound from "@/pages/not-found";
 import { AuthProvider } from "@/hooks/use-auth";
 import { CartProvider } from "@/hooks/use-cart";
-import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { ProtectedRoute, GuestRoute, OnboardingRoute } from "@/components/layout/ProtectedRoute";
 
 // Stable QueryClient config — 1 retry, 5min stale time, no refetch on window focus
 const queryClient = new QueryClient({
@@ -34,8 +34,8 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
-      <Route path="/login" component={Login} />
-      <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
+      <Route path="/login" component={() => <GuestRoute component={Login} />} />
+      <Route path="/onboarding" component={() => <OnboardingRoute component={Onboarding} />} />
       <Route path="/verify-email" component={VerifyEmail} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />

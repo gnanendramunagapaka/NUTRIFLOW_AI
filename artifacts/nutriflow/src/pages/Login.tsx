@@ -61,21 +61,6 @@ export default function Login() {
   const [ssoLoading, setSsoLoading] = useState<"google" | "apple" | null>(null);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
-  // Auto redirect if already logged in
-  useEffect(() => {
-    if (user) {
-      console.log("[Login DEBUG] user state active:", user);
-      console.log("[Login DEBUG] onboarded status:", onboarded);
-      if (onboarded) {
-        console.log("[Login DEBUG] Redirecting to /dashboard");
-        setLocation("/dashboard");
-      } else {
-        console.log("[Login DEBUG] Redirecting to /onboarding");
-        setLocation("/onboarding");
-      }
-    }
-  }, [user, onboarded, setLocation]);
-
   // Hook Forms
   const {
     register: registerLogin,
