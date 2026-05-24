@@ -77,7 +77,8 @@ export default function Checkout() {
         address: selectedAddress.address,
         placedAt: new Date().toISOString(),
       };
-      localStorage.setItem("nutriflow_last_order", JSON.stringify(orderDetails));
+      const orderKey = user ? `nutriflow_last_order_${user.id}` : "nutriflow_last_order";
+      localStorage.setItem(orderKey, JSON.stringify(orderDetails));
       clearCart();
       setLocation("/order-confirmation");
     }, 2000);

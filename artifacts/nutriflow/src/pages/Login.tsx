@@ -51,7 +51,7 @@ const forgotSchema = z.object({
 type AuthMode = "login" | "signup" | "forgot";
 
 export default function Login() {
-  const { user, onboarded, login, signup } = useAuth();
+  const { user, onboarded, login, signup, loginWithGoogle } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
@@ -149,6 +149,7 @@ export default function Login() {
         title: "Account created!",
         description: "Please verify your email address to continue.",
       });
+      setLocation(`/verify-email?email=${encodeURIComponent(data.email)}`);
     } catch (err: any) {
       toast({
         title: "Signup Failed",
@@ -180,20 +181,25 @@ export default function Login() {
     }
   };
 
-  // Simulated SSO Sign-in
+  // SSO Sign-in
   const handleSSO = async (provider: "google" | "apple") => {
     setSsoLoading(provider);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      await login(`${provider}@example.com`, "sso_token");
-      toast({
-        title: "Connected via OAuth",
-        description: `Logged in successfully with your ${provider === "google" ? "Google" : "Apple"} ID.`,
-      });
-    } catch {
+      if (provider === "google") {
+        await loginWithGoogle();
+      } else {
+        // Fallback mock sign-in for Apple SSO
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await login("apple@example.com", "sso_token");
+        toast({
+          title: "Connected via OAuth",
+          description: "Logged in successfully with your Apple ID.",
+        });
+      }
+    } catch (err: any) {
       toast({
         title: "SSO Connection Failed",
-        description: "Could not establish identity link.",
+        description: err.message || "Could not establish identity link.",
         variant: "destructive",
       });
     } finally {

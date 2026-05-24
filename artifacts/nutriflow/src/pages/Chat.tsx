@@ -555,7 +555,7 @@ export default function Chat() {
         content: m.content
       }));
 
-      const res = await fetch(`/api/openai/conversations/1/messages`, {
+      const res = await fetch(`/api/openai/conversations/${currentConvId}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

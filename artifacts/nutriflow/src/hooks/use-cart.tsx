@@ -65,41 +65,119 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState<Address>(DEFAULT_ADDRESSES[0]);
 
-  // Helper for auth headers
-  const getAuthHeaders = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    return {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-  };
+  const getCartKey = () => user ? `nutriflow_cart_${user.id}` : `nutriflow_cart_guest`;
 
   // Sync cart from DB when user changes
   useEffect(() => {
     if (user) {
       loadCartFromDb();
     } else {
-      // Clear cart locally on logout to prevent leak
-      setItems([]);
-      localStorage.removeItem("nutriflow_cart");
+      loadGuestCart();
     }
   }, [user]);
 
+  const loadGuestCart = () => {
+    try {
+      const raw = localStorage.getItem("nutriflow_cart_guest");
+      if (raw) {
+        setItems(JSON.parse(raw));
+      } else {
+        setItems([]);
+      }
+    } catch {
+      setItems([]);
+    }
+  };
+
   const loadCartFromDb = async () => {
-    // 1. Immediately populate from localStorage so UI is instant
+    const userId = user?.id;
+    const cartKey = userId ? `nutriflow_cart_${userId}` : `nutriflow_cart_guest`;
+
+    // 1. Immediately populate from user-scoped localStorage so UI is instant
     let localItems: CartItem[] = [];
     try {
-      const raw = localStorage.getItem("nutriflow_cart");
+      const raw = localStorage.getItem(cartKey);
       if (raw) {
         localItems = JSON.parse(raw);
         setItems(localItems);
       }
     } catch {
-      // ignore parse errors
+      // ignore
     }
 
-    // 2. Background: fetch from Supabase and merge
+    // 2. Merge guest items if present (when transitioning from guest to logged-in)
+    if (userId) {
+      try {
+        const guestRaw = localStorage.getItem("nutriflow_cart_guest");
+        if (guestRaw) {
+          const guestItems: CartItem[] = JSON.parse(guestRaw);
+          if (guestItems.length > 0) {
+            // Merge guest items into localItems
+            const merged = [...localItems];
+            for (const gi of guestItems) {
+              const existingIndex = merged.findIndex(i => String(i.id) === String(gi.id));
+              if (existingIndex > -1) {
+                merged[existingIndex].quantity += gi.quantity;
+              } else {
+                merged.push(gi);
+              }
+            }
+            localItems = merged;
+            setItems(localItems);
+            localStorage.setItem(cartKey, JSON.stringify(localItems));
+
+            // Sync merged guest items to Supabase
+            const { data: sbUser } = await supabase.auth.getUser();
+            if (sbUser?.user) {
+              for (const item of guestItems) {
+                const itemIdStr = String(item.id);
+                // Check if already in DB
+                const { data: existing } = await supabase
+                  .from("cart_items")
+                  .select("*")
+                  .eq("item_id", itemIdStr)
+                  .eq("user_id", sbUser.user.id)
+                  .maybeSingle();
+
+                if (existing) {
+                  await supabase
+                    .from("cart_items")
+                    .update({ quantity: existing.quantity + item.quantity })
+                    .eq("id", existing.id);
+                } else {
+                  await supabase
+                    .from("cart_items")
+                    .insert({
+                      user_id: sbUser.user.id,
+                      item_id: itemIdStr,
+                      name: item.name,
+                      price: item.price,
+                      quantity: item.quantity,
+                      type: item.type,
+                      calories: item.calories,
+                      protein: item.protein,
+                      carbs: item.carbs,
+                      fat: item.fat,
+                      health_score: item.healthScore,
+                      image_url: item.imageUrl,
+                      cuisine: item.cuisine,
+                      category: item.category,
+                      unit: item.unit,
+                      description: item.description,
+                    });
+                }
+              }
+            }
+            // Clear guest cart
+            localStorage.removeItem("nutriflow_cart_guest");
+          }
+        }
+      } catch (e) {
+        console.warn("[useCart] Merging guest cart failed (non-critical):", e);
+      }
+    }
+
+    // 3. Background: fetch from Supabase and merge
     try {
       const { data: { user: sbUser } } = await supabase.auth.getUser();
       if (!sbUser) return;
@@ -141,7 +219,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         const localOnly = localItems.filter(li => !dbIds.has(String(li.id)));
         const merged = [...mapped, ...localOnly];
         setItems(merged);
-        localStorage.setItem("nutriflow_cart", JSON.stringify(merged));
+        localStorage.setItem(cartKey, JSON.stringify(merged));
       }
 
       console.log("[useCart] Cart loaded from Supabase:", dbItems?.length ?? 0, "items");
@@ -163,7 +241,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     setItems(updated);
-    localStorage.setItem("nutriflow_cart", JSON.stringify(updated));
+    localStorage.setItem(getCartKey(), JSON.stringify(updated));
 
     // Persist to Supabase if logged in
     if (user) {
@@ -174,6 +252,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
             .from("cart_items")
             .select("*")
             .eq("item_id", itemIdStr)
+            .eq("user_id", sbUser.id)
             .maybeSingle();
 
           if (fetchErr) throw fetchErr;
@@ -218,7 +297,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     const idStr = String(id);
     const updated = items.filter(item => String(item.id) !== idStr);
     setItems(updated);
-    localStorage.setItem("nutriflow_cart", JSON.stringify(updated));
+    localStorage.setItem(getCartKey(), JSON.stringify(updated));
 
     if (user) {
       try {
@@ -228,7 +307,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           .from("cart_items")
           .delete()
           .eq("item_id", idStr)
-          .eq("user_id", sbUser.id); // RLS-safe: always filter by user_id
+          .eq("user_id", sbUser.id);
         if (error) console.warn("[useCart] removeFromCart DB error (non-critical):", error.message);
       } catch (e) {
         console.warn("[useCart] Failed to remove item from Supabase (non-critical):", e);
@@ -245,7 +324,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     const updated = items.map(item => String(item.id) === idStr ? { ...item, quantity } : item);
     setItems(updated);
-    localStorage.setItem("nutriflow_cart", JSON.stringify(updated));
+    localStorage.setItem(getCartKey(), JSON.stringify(updated));
 
     if (user) {
       try {
@@ -255,7 +334,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           .from("cart_items")
           .update({ quantity })
           .eq("item_id", idStr)
-          .eq("user_id", sbUser.id); // RLS-safe: always filter by user_id
+          .eq("user_id", sbUser.id);
         if (error) console.warn("[useCart] updateQuantity DB error (non-critical):", error.message);
       } catch (e) {
         console.warn("[useCart] Failed to update item quantity in Supabase (non-critical):", e);
@@ -265,7 +344,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const clearCart = async () => {
     setItems([]);
-    localStorage.removeItem("nutriflow_cart");
+    localStorage.removeItem(getCartKey());
 
     if (user) {
       try {

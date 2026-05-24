@@ -25,6 +25,7 @@ import {
   ThumbsUp
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 interface OrderDetails {
   orderId: string;
@@ -39,6 +40,7 @@ interface OrderDetails {
 
 export default function OrderConfirmation() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
   const [order, setOrder] = useState<OrderDetails | null>(null);
   const [step, setStep] = useState(0);
   const [notification, setNotification] = useState<string | null>(null);
@@ -46,7 +48,8 @@ export default function OrderConfirmation() {
   // Load last order details
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("nutriflow_last_order");
+      const orderKey = user ? `nutriflow_last_order_${user.id}` : "nutriflow_last_order";
+      const stored = localStorage.getItem(orderKey);
       if (stored) {
         setOrder(JSON.parse(stored));
       } else {

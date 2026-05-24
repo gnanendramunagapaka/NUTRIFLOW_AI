@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
-import { Mail, Loader2, RefreshCw, LogOut, ArrowRight } from "lucide-react";
+import { Mail, Loader2, RefreshCw, LogOut, Check } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,28 +10,41 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function VerifyEmail() {
-  const { user, supabaseUser, logout } = useAuth();
+  const { user, supabaseUser, logout, refreshUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const [isResending, setIsResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(30);
+  const [isChecking, setIsChecking] = useState(false);
+
+  const [search] = useState(() => typeof window !== "undefined" ? window.location.search : "");
+  const email = new URLSearchParams(search).get("email") || supabaseUser?.email || "";
 
   // Auto redirect if user profile exists and is verified
   useEffect(() => {
-    if (supabaseUser) {
-      // In Supabase, check if the email is confirmed
-      if (supabaseUser.email_confirmed_at) {
-        if (user?.onboardingCompleted) {
-          setLocation("/dashboard");
-        } else {
-          setLocation("/onboarding");
-        }
+    if (supabaseUser && supabaseUser.email_confirmed_at) {
+      if (user?.onboardingCompleted) {
+        setLocation("/dashboard");
+      } else {
+        setLocation("/onboarding");
       }
-    } else {
-      setLocation("/login"); // Redirect to login if not logged in
     }
   }, [supabaseUser, user, setLocation]);
+
+  // Auth state listener for instant verification redirect when session changes
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session && session.user.email_confirmed_at) {
+        toast({
+          title: "Email Verified! 🎉",
+          description: "Welcome to NutriFlow AI.",
+        });
+        await refreshUser();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [refreshUser, toast]);
 
   // Resend cooldown timer
   useEffect(() => {
@@ -45,13 +58,17 @@ export default function VerifyEmail() {
   }, [resendCooldown]);
 
   const handleResend = async () => {
-    if (!supabaseUser?.email || resendCooldown > 0 || isResending) return;
+    const targetEmail = email || supabaseUser?.email;
+    if (!targetEmail || resendCooldown > 0 || isResending) return;
 
     setIsResending(true);
     try {
       const { error } = await supabase.auth.resend({
         type: "signup",
-        email: supabaseUser.email,
+        email: targetEmail,
+        options: {
+          emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined
+        }
       });
 
       if (error) throw error;
@@ -59,7 +76,7 @@ export default function VerifyEmail() {
       setResendCooldown(60); // Longer cooldown for production API limits
       toast({
         title: "Verification Email Sent",
-        description: `We've sent a new activation link to ${supabaseUser.email}.`,
+        description: `We've sent a new activation link to ${targetEmail}.`,
       });
     } catch (err: any) {
       toast({
@@ -89,7 +106,7 @@ export default function VerifyEmail() {
               Confirm Your Email
             </CardTitle>
             <CardDescription className="text-muted-foreground/90 max-w-sm mx-auto text-center px-2">
-              We've sent an activation link to <span className="font-semibold text-foreground">{supabaseUser?.email}</span>.
+              We've sent an activation link to <span className="font-semibold text-foreground">{email || supabaseUser?.email || "your email address"}</span>.
             </CardDescription>
           </motion.div>
         </CardHeader>
@@ -104,15 +121,49 @@ export default function VerifyEmail() {
               Waiting for Confirmation
             </span>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              This page will automatically refresh and redirect you to onboarding once the confirmation link is clicked.
+              This page will automatically refresh once verified. You can also click the button below to check manually.
             </p>
           </div>
 
           <div className="space-y-3 pt-2">
             <Button
+              onClick={async () => {
+                setIsChecking(true);
+                try {
+                  await refreshUser();
+                  toast({
+                    title: "Checking Status...",
+                    description: "Queried the latest verification status from Supabase."
+                  });
+                } catch (e: any) {
+                  toast({
+                    title: "Status Check Failed",
+                    description: e.message || "Failed to update auth status.",
+                    variant: "destructive"
+                  });
+                } finally {
+                  setIsChecking(false);
+                }
+              }}
+              disabled={isChecking}
+              className="w-full h-11 text-sm font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center justify-center gap-1.5 hover-elevate transition-all duration-200"
+            >
+              {isChecking ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Checking...
+                </>
+              ) : (
+                <>
+                  <Check className="h-4 w-4" />
+                  I've Confirmed My Email — Proceed
+                </>
+              )}
+            </Button>
+
+            <Button
               onClick={handleResend}
-              disabled={resendCooldown > 0 || isResending || !supabaseUser}
-              className="w-full h-11 text-sm font-medium rounded-lg bg-primary hover:bg-primary/95 text-primary-foreground shadow-md transition-all hover:translate-y-[-1px] active:translate-y-[0px] flex items-center justify-center gap-1.5"
+              disabled={resendCooldown > 0 || isResending || !(email || supabaseUser)}
+              className="w-full h-11 text-sm font-semibold rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground shadow-md transition-all hover:translate-y-[-1px] active:translate-y-[0px] flex items-center justify-center gap-1.5"
             >
               {isResending ? (
                 <>
@@ -130,7 +181,7 @@ export default function VerifyEmail() {
               variant="outline"
               type="button"
               onClick={() => logout()}
-              className="w-full h-11 text-xs font-semibold rounded-lg border-muted-foreground/20 text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5"
+              className="w-full h-11 text-xs font-bold rounded-xl border-muted-foreground/20 text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 hover:bg-muted/50"
             >
               <LogOut className="h-4 w-4" /> Back to Sign In
             </Button>

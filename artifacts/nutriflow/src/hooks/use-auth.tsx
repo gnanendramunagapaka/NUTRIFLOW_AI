@@ -48,6 +48,7 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
+  loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   updateOnboarding: (data: Partial<OnboardingData>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
@@ -61,36 +62,55 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const LS_ONBOARDING = "nutriflow_onboarding";
 const LS_USER = "nutriflow_user_profile";
 
-function readLocalOnboarding(): Partial<OnboardingData> {
+function readLocalOnboarding(userId?: string): Partial<OnboardingData> {
   try {
-    const raw = localStorage.getItem(LS_ONBOARDING);
-    return raw ? JSON.parse(raw) : {};
+    const key = userId ? `${LS_ONBOARDING}_${userId}` : LS_ONBOARDING;
+    const raw = localStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+    
+    // Merge fallback to guest onboarding data if user-specific is empty
+    if (userId) {
+      const guestRaw = localStorage.getItem(LS_ONBOARDING);
+      if (guestRaw) {
+        return JSON.parse(guestRaw);
+      }
+    }
+    return {};
   } catch {
     return {};
   }
 }
 
-function writeLocalOnboarding(data: Partial<OnboardingData>) {
+function writeLocalOnboarding(data: Partial<OnboardingData>, userId?: string) {
   try {
-    const current = readLocalOnboarding();
-    localStorage.setItem(LS_ONBOARDING, JSON.stringify({ ...current, ...data }));
+    const key = userId ? `${LS_ONBOARDING}_${userId}` : LS_ONBOARDING;
+    const current = readLocalOnboarding(userId);
+    const merged = { ...current, ...data };
+    localStorage.setItem(key, JSON.stringify(merged));
+    
+    // Also update guest key for fallback persistence during early registration
+    if (!userId) {
+      localStorage.setItem(LS_ONBOARDING, JSON.stringify(merged));
+    }
   } catch {
     // ignore
   }
 }
 
-function readLocalUser(): User | null {
+function readLocalUser(userId?: string): User | null {
   try {
-    const raw = localStorage.getItem(LS_USER);
+    const key = userId ? `${LS_USER}_${userId}` : LS_USER;
+    const raw = localStorage.getItem(key);
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
-function writeLocalUser(user: User) {
+function writeLocalUser(user: User, userId?: string) {
   try {
-    localStorage.setItem(LS_USER, JSON.stringify(user));
+    const key = userId ? `${LS_USER}_${userId}` : LS_USER;
+    localStorage.setItem(key, JSON.stringify(user));
   } catch {
     // ignore
   }
@@ -122,9 +142,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session.user.user_metadata?.name ||
       (emailPart ? emailPart.charAt(0).toUpperCase() + emailPart.slice(1) : "User");
 
-    // Merge with any locally cached data
-    const local = readLocalUser();
-    const localOnboarding = readLocalOnboarding();
+    // Merge with user-scoped locally cached data
+    const local = readLocalUser(session.user.id);
+    const localOnboarding = readLocalOnboarding(session.user.id);
 
     return {
       id: session.user.id,
@@ -222,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           streak: result.streak || 1,
           avatarUrl: result.avatar_url || null,
         };
-        writeLocalUser(dbUser);
+        writeLocalUser(dbUser, session.user.id);
         return dbUser;
       }
 
@@ -316,7 +336,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name } },
+      options: { 
+        data: { name },
+        emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined
+      },
     });
     if (error) throw new Error(error.message);
     if (data.session) {
@@ -328,7 +351,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
+  const loginWithGoogle = async (): Promise<void> => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: typeof window !== "undefined" ? `${window.location.origin}/dashboard` : undefined
+      }
+    });
+    if (error) throw new Error(error.message);
+  };
+
   const logout = async (): Promise<void> => {
+    const userId = supabaseUser?.id;
     try {
       await supabase.auth.signOut();
     } catch (err) {
@@ -336,11 +370,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null);
     setSupabaseUser(null);
-    // Clear all user-specific localStorage data
+
+    // Clear all user-specific and fallback localStorage data
+    if (userId) {
+      localStorage.removeItem(`${LS_USER}_${userId}`);
+      localStorage.removeItem(`${LS_ONBOARDING}_${userId}`);
+      localStorage.removeItem(`nutriflow_cart_${userId}`);
+      localStorage.removeItem(`nutriflow_last_order_${userId}`);
+    }
     localStorage.removeItem(LS_USER);
     localStorage.removeItem(LS_ONBOARDING);
     localStorage.removeItem("nutriflow_cart");
     localStorage.removeItem("nutriflow_chat");
+    localStorage.removeItem("nutriflow_cart_guest");
+    localStorage.removeItem("nutriflow_last_order");
+
     try {
       queryClient.clear();
     } catch {
@@ -351,8 +395,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ─── Onboarding ────────────────────────────────────────────────────────────
 
   const updateOnboarding = async (data: Partial<OnboardingData>): Promise<void> => {
+    const userId = supabaseUser?.id;
     // 1. Always update local state immediately (non-blocking)
-    writeLocalOnboarding(data);
+    writeLocalOnboarding(data, userId);
 
     if (user) {
       const updatedUser: User = {
@@ -370,7 +415,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         height: data.height !== undefined ? data.height : user.height,
       };
       setUser(updatedUser);
-      writeLocalUser(updatedUser);
+      writeLocalUser(updatedUser, userId);
     }
 
     // 2. Background: persist to Supabase (fire-and-forget — never blocks)
@@ -407,11 +452,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const completeOnboarding = async (): Promise<void> => {
+    const userId = supabaseUser?.id;
     // 1. Update local state immediately
     if (user) {
       const updatedUser: User = { ...user, onboardingCompleted: true };
       setUser(updatedUser);
-      writeLocalUser(updatedUser);
+      writeLocalUser(updatedUser, userId);
     }
 
     // 2. Background: update Supabase
@@ -433,7 +479,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ─── Derived state ─────────────────────────────────────────────────────────
 
-  const localOnboarding = readLocalOnboarding();
+  const localOnboarding = readLocalOnboarding(supabaseUser?.id);
 
   const onboardingData: OnboardingData = {
     goals: user?.goal ? [user.goal] : (localOnboarding.goals || []),
@@ -461,6 +507,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         login,
         signup,
+        loginWithGoogle,
         logout,
         updateOnboarding,
         completeOnboarding,

@@ -36,7 +36,7 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/login" component={Login} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={Onboarding} />} />
-      <Route path="/verify-email" component={() => <ProtectedRoute component={VerifyEmail} />} />
+      <Route path="/verify-email" component={VerifyEmail} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
       <Route path="/discover" component={() => <ProtectedRoute component={Discover} />} />
