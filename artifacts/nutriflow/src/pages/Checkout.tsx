@@ -408,10 +408,10 @@ export default function Checkout() {
               <div className="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/40 p-3.5 rounded-2xl text-[10px] text-amber-800 dark:text-amber-300/80 space-y-1.5">
                 <div className="flex items-center gap-1.5 font-bold">
                   <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                  <span>Demo Checkout Flow</span>
+                  <span>Demonstration Checkout Flow</span>
                 </div>
                 <p className="leading-relaxed">
-                  Payment integration is currently mock. Clicking "Place Order" will simulate a successful Swiggy delivery partner dispatch workflow.
+                  This transaction is processed in demonstration mode. Clicking "Place Order" will simulate a successful Swiggy delivery partner dispatch and real-time tracking experience.
                 </p>
               </div>
 
