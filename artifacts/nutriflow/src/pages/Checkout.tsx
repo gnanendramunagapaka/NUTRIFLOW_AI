@@ -152,9 +152,10 @@ export default function Checkout() {
                 <CardDescription className="text-xs">Choose where you'd like your wellness order delivered.</CardDescription>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
                   {addresses.map((addr) => {
                     const isSelected = selectedAddress.id === addr.id;
+                    const emoji = addr.icon === "Home" ? "🏠" : addr.icon === "Briefcase" ? "💼" : "📍";
                     return (
                       <div
                         key={addr.id}
@@ -167,9 +168,11 @@ export default function Checkout() {
                         )}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase tracking-wider text-foreground">{addr.label}</span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1">
+                            <span>{emoji}</span> {addr.label}
+                          </span>
                           {isSelected && (
-                            <span className="h-4 w-4 rounded-full bg-emerald-600 flex items-center justify-center text-white">
+                            <span className="h-4 w-4 rounded-full bg-emerald-600 flex items-center justify-center text-white shrink-0">
                               <CheckCircle className="h-3 w-3" />
                             </span>
                           )}
@@ -184,7 +187,7 @@ export default function Checkout() {
 
             {/* AI Recommendation Explanation Note */}
             <Card className="border border-emerald-100 dark:border-emerald-900 bg-emerald-50/10 dark:bg-emerald-950/5 rounded-3xl overflow-hidden shadow-2xs">
-              <CardContent className="p-5 flex items-start gap-4">
+              <CardContent className="p-5 flex items-start gap-4 text-left">
                 <div className="h-10 w-10 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0 text-emerald-700">
                   <Sparkles className="h-5 w-5" />
                 </div>
@@ -193,6 +196,34 @@ export default function Checkout() {
                   <p className="text-xs text-emerald-800/90 dark:text-emerald-400/90 leading-relaxed mt-1">
                     Based on your onboarding profile (goal: <span className="font-bold text-foreground">{user?.goal || "balanced nutrition"}</span>), this order delivers exactly <span className="font-bold text-foreground">{totalProtein}g of protein</span> representing <span className="font-bold text-foreground">{Math.round((totalProtein / 65) * 100)}%</span> of your daily target. The micro-nutrients are structured to optimize cellular recovery and support metabolism.
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Smart Healthy Swaps Card */}
+            <Card className="border border-amber-200 bg-amber-500/[0.02] rounded-3xl overflow-hidden shadow-2xs">
+              <CardContent className="p-5 flex items-start gap-4 text-left">
+                <div className="h-10 w-10 rounded-2xl bg-amber-100 dark:bg-amber-950/20 flex items-center justify-center shrink-0 text-amber-700">
+                  <Sparkles className="h-5 w-5 animate-pulse" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-amber-900 dark:text-amber-800">💡 Recommended Healthy Swap (Save 140 kcal!)</h4>
+                  <p className="text-xs text-amber-800/95 dark:text-amber-750/95 leading-relaxed mt-1">
+                    Swap your regular dressing for our **Lemon Tahini Mint Vinaigrette** to reduce sodium levels by 30% and eliminate refined sugars. 
+                  </p>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => {
+                      toast({
+                        title: "Swap Applied! 🥗",
+                        description: "Dressing swapped for Lemon Tahini Mint Vinaigrette. 140 kcal saved!",
+                      });
+                    }}
+                    className="mt-3 rounded-xl border-amber-200 text-amber-800 hover:bg-amber-100/50 text-[10px] font-bold h-8"
+                  >
+                    Apply Healthy Swap
+                  </Button>
                 </div>
               </CardContent>
             </Card>

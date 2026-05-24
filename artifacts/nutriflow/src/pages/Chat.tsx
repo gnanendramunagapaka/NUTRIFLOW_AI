@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
-import { Send, Plus, MessageSquare, Flame, Dumbbell, Heart, Utensils, Check, Loader2, ShoppingCart } from "lucide-react";
+import { Send, Plus, MessageSquare, Flame, Dumbbell, Heart, Utensils, Check, Loader2, ShoppingCart, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
-
+import { MOCK_PREVIOUS_CHATS } from "@/lib/mockData";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,12 +41,6 @@ interface ParsedAIMessage {
 
 // ─── Content Parser ────────────────────────────────────────────────────────────
 
-/**
- * Parses an AI message string which may be:
- *  1. Complete valid JSON  → parse fully
- *  2. Partial JSON (mid-stream) → extract "text" field with regex
- *  3. Plain text (non-JSON) → return as-is
- */
 function parseAIContent(content: string): { displayText: string; parsed: ParsedAIMessage | null } {
   const trimmed = content.trim();
 
@@ -62,8 +56,6 @@ function parseAIContent(content: string): { displayText: string; parsed: ParsedA
     const obj = JSON.parse(trimmed) as ParsedAIMessage;
     return { displayText: obj.text || "", parsed: obj };
   } catch {
-    // Partial JSON — extract text field progressively via regex
-    // Matches "text": "...streamed content..." including partial (no closing quote)
     const match = trimmed.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
     if (match && match[1]) {
       let text = match[1];
@@ -74,7 +66,6 @@ function parseAIContent(content: string): { displayText: string; parsed: ParsedA
       }
       return { displayText: text, parsed: null };
     }
-    // JSON started but text field not yet arrived
     return { displayText: "", parsed: null };
   }
 }
@@ -154,7 +145,7 @@ function AIMessageBubble({
       addToCart({
         id: `grocery-ai-${item.name.toLowerCase().replace(/\s+/g, "-")}`,
         name: item.name,
-        price: 49, // mock price per grocery item
+        price: 49,
         type: 'grocery',
         category: item.category,
         unit: item.unit,
@@ -171,22 +162,19 @@ function AIMessageBubble({
 
   return (
     <div className="space-y-4 w-full">
-      {/* Main conversational text */}
       {displayText ? (
-        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">{displayText}</p>
+        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap text-left">{displayText}</p>
       ) : !parsed ? (
-        // Fallback: show raw content if nothing else parsed
-        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap">{content}</p>
+        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap text-left">{content}</p>
       ) : null}
 
-      {/* Wellness Insight */}
       {parsed?.wellnessInsight && (
         <Card className="bg-emerald-50/60 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/50">
           <CardContent className="p-4 flex items-start gap-3">
             <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0">
               <Heart className="h-4 w-4 text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400" />
             </div>
-            <div>
+            <div className="text-left">
               <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Copilot Insight</span>
               <p className="text-sm text-emerald-900/90 dark:text-emerald-200/90 italic mt-0.5">{parsed.wellnessInsight}</p>
             </div>
@@ -194,11 +182,9 @@ function AIMessageBubble({
         </Card>
       )}
 
-      {/* Meal Recommendation Card */}
       {parsed?.recommendation && (
         <Card className="border border-emerald-100 dark:border-emerald-900 shadow-md rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-50/40 to-background dark:from-emerald-950/10 dark:to-background">
-          <div className="p-5 space-y-4">
-            {/* Header */}
+          <div className="p-5 space-y-4 text-left">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
@@ -225,7 +211,6 @@ function AIMessageBubble({
               </div>
             </div>
 
-            {/* Macros */}
             <div className="grid grid-cols-2 gap-2">
               <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100/40 p-3 rounded-xl flex items-center gap-3">
                 <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
@@ -247,14 +232,12 @@ function AIMessageBubble({
               </div>
             </div>
 
-            {/* Reason */}
             {parsed.recommendation.reason && (
               <p className="text-xs text-muted-foreground italic bg-muted/40 p-3 rounded-xl border border-border/30">
                 "{parsed.recommendation.reason}"
               </p>
             )}
 
-            {/* Ingredients + Action */}
             {parsed.recommendation.groceryItems?.length > 0 && (
               <div className="space-y-3">
                 <span className="text-xs font-semibold text-foreground/80 flex items-center gap-1.5">
@@ -292,10 +275,9 @@ function AIMessageBubble({
         </Card>
       )}
 
-      {/* Grocery Plan Card */}
       {parsed?.groceryPlan && parsed.groceryPlan.length > 0 && (
         <Card className="border border-emerald-100 dark:border-emerald-900 shadow-md rounded-2xl overflow-hidden">
-          <div className="p-5 space-y-4">
+          <div className="p-5 space-y-4 text-left">
             <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
               AI Grocery Plan
             </span>
@@ -320,7 +302,7 @@ function AIMessageBubble({
                             <p className="text-[10px] text-muted-foreground mt-0.5">{item.nutritionNote}</p>
                           )}
                         </div>
-                        <span className="shrink-0 bg-muted text-muted-foreground px-2 py-0.5 rounded ml-3">
+                        <span className="shrink-0 bg-muted text-muted-foreground px-2 py-0.5 rounded ml-3 font-semibold">
                           {item.quantity} {item.unit}
                         </span>
                       </li>
@@ -395,7 +377,6 @@ export default function Chat() {
       }
 
       setConversations(data || []);
-      console.log("[Chat] Loaded", data?.length ?? 0, "conversations from Supabase");
     } catch (e) {
       console.warn("[Chat] loadConversations failed (non-critical):", e);
       setConversations([]);
@@ -407,6 +388,14 @@ export default function Chat() {
   const loadMessages = async (convId: string) => {
     setLoadingMessages(true);
     try {
+      if (convId.startsWith("c-")) {
+        // Load messages from mock chats
+        const mockMatch = MOCK_PREVIOUS_CHATS.find(c => c.id === convId);
+        setMessages(mockMatch ? mockMatch.messages.map((m, i) => ({ id: `${convId}-${i}`, role: m.role, content: m.content })) : []);
+        setLoadingMessages(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("ai_messages")
         .select("*")
@@ -431,7 +420,6 @@ export default function Chat() {
   useEffect(() => {
     loadConversations();
   }, []);
-
 
   useEffect(() => {
     if (activeId) {
@@ -471,6 +459,42 @@ export default function Chat() {
     }
   };
 
+  // Click handler for prompt chips
+  const handleQuickPrompt = async (promptText: string) => {
+    if (isStreaming) return;
+    let targetConvId = activeId;
+    
+    // Create new conversation if none is active
+    if (!targetConvId) {
+      try {
+        const { data: { user: sbUser } } = await supabase.auth.getUser();
+        if (!sbUser) return;
+        const { data, error } = await supabase
+          .from("ai_conversations")
+          .insert({
+            title: promptText.length > 25 ? promptText.slice(0, 25) + "..." : promptText,
+            user_id: sbUser.id
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        setConversations(old => [data, ...old]);
+        targetConvId = data.id;
+        setActiveId(data.id);
+      } catch (e) {
+        console.error(e);
+        return;
+      }
+    }
+
+    setInput(promptText);
+    setTimeout(() => {
+      const form = document.getElementById("chat-form") as HTMLFormElement;
+      if (form) form.requestSubmit();
+    }, 100);
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !activeId || isStreaming) return;
@@ -488,14 +512,33 @@ export default function Chat() {
     };
 
     try {
-      // 1. Optimistic UI update
       setMessages(old => [...(old || []), optimisticUserMsg]);
 
-      // 2. Persist user message to Supabase
+      // If active conversation is a mock, convert it to a database conversation first
+      let currentConvId = activeId;
+      if (activeId.startsWith("c-")) {
+        const { data: { user: sbUser } } = await supabase.auth.getUser();
+        if (!sbUser) return;
+        
+        const { data, error } = await supabase
+          .from("ai_conversations")
+          .insert({
+            title: userMessage.length > 25 ? userMessage.slice(0, 25) + "..." : userMessage,
+            user_id: sbUser.id
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        setConversations(old => [data, ...old.filter(c => c.id !== activeId)]);
+        currentConvId = data.id;
+        setActiveId(data.id);
+      }
+
       const { data: userMsg, error: userErr } = await supabase
         .from("ai_messages")
         .insert({
-          conversation_id: activeId,
+          conversation_id: currentConvId,
           role: "user",
           content: userMessage
         })
@@ -504,11 +547,9 @@ export default function Chat() {
 
       if (userErr) throw userErr;
 
-      // 3. Fetch token and call backend streaming API
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      // Map last 10 messages from current chat history state to send as Gemini LLM context
       const chatHistoryContext = messages.slice(-10).map((m: any) => ({
         role: m.role,
         content: m.content
@@ -526,10 +567,7 @@ export default function Chat() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       if (!res.body) throw new Error("No response body");
 
       const reader = res.body.getReader();
@@ -563,18 +601,17 @@ export default function Chat() {
               setStreamingContent(assistantMsg);
             }
           } catch {
-            // skip malformed SSE line
+            // skip malformed line
           }
         }
       }
 
       setIsFallback(wasFallback);
 
-      // 4. Save final assistant message to Supabase
       const { data: assistantMsgRow, error: assistantErr } = await supabase
         .from("ai_messages")
         .insert({
-          conversation_id: activeId,
+          conversation_id: currentConvId,
           role: "assistant",
           content: assistantMsg
         })
@@ -583,7 +620,6 @@ export default function Chat() {
 
       if (assistantErr) throw assistantErr;
 
-      // Update state with actual database rows
       setMessages(old => [
         ...(old || []).filter((m: any) => m.id !== optimisticUserMsg.id),
         userMsg,
@@ -599,7 +635,6 @@ export default function Chat() {
     } catch (err: any) {
       console.error("Chat error:", err);
       toast({ title: "Failed to send message", description: err.message, variant: "destructive" });
-      // Revert optimistic insert
       setMessages(old => (old || []).filter((m: any) => m.id !== optimisticUserMsg.id));
     } finally {
       setIsStreaming(false);
@@ -648,34 +683,41 @@ export default function Chat() {
     }
   };
 
+  // Render combined DB and mock conversations in sidebar
+  const combinedConversations = conversations && conversations.length > 0
+    ? [...conversations, ...MOCK_PREVIOUS_CHATS.filter(mc => !conversations.some(c => c.title === mc.title))]
+    : MOCK_PREVIOUS_CHATS;
+
   return (
     <Layout>
       <div className="flex h-[calc(100vh-4rem)] bg-background">
         {/* Sidebar */}
         <div className="w-64 border-r hidden md:flex flex-col bg-muted/10">
           <div className="p-3 border-b">
-            <Button onClick={handleCreate} className="w-full justify-start gap-2 h-9" variant="outline">
+            <Button onClick={handleCreate} className="w-full justify-start gap-2 h-9 font-semibold" variant="outline">
               <Plus className="h-4 w-4" />
               New Chat
             </Button>
           </div>
           <ScrollArea className="flex-1 p-2">
             {loadingConversations ? (
-              <div className="p-4 text-center text-xs text-muted-foreground">Loading...</div>
+              <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading chats...
+              </div>
             ) : (
-              conversations?.map((c) => (
+              combinedConversations?.map((c) => (
                 <div
                   key={c.id}
                   onClick={() => setActiveId(c.id)}
                   className={cn(
-                    "p-3 mb-1 rounded-lg cursor-pointer flex items-center gap-2 text-sm transition-colors",
+                    "p-3 mb-1 rounded-lg cursor-pointer flex items-center gap-2 text-sm transition-all duration-200",
                     activeId === c.id
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "hover:bg-muted text-foreground/70"
+                      ? "bg-primary/10 text-primary font-bold shadow-2xs"
+                      : "hover:bg-muted text-foreground/75"
                   )}
                 >
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{c.title}</span>
+                  <MessageSquare className="h-4 w-4 shrink-0 text-emerald-600" />
+                  <span className="truncate text-left">{c.title}</span>
                 </div>
               ))
             )}
@@ -687,16 +729,40 @@ export default function Chat() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
             {loadingMessages && activeId ? (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading messages...
+                <Loader2 className="h-4.5 w-4.5 animate-spin mr-2" /> Loading messages...
               </div>
             ) : !messages?.length && !isStreaming ? (
-              <div className="h-full flex flex-col items-center justify-center text-center space-y-3 text-muted-foreground">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <MessageSquare className="h-6 w-6 text-primary" />
+              <div className="h-full max-w-xl mx-auto flex flex-col items-center justify-center text-center space-y-6">
+                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center shadow-inner relative">
+                  <div className="absolute inset-0 rounded-full bg-primary/5 animate-pulse" />
+                  <Sparkles className="h-7 w-7 text-primary animate-bounce duration-1000" />
                 </div>
-                <div>
-                  <p className="font-medium text-foreground">Ask your AI Nutritionist</p>
-                  <p className="text-sm mt-1">Try: "Suggest a high protein dinner" or "Create a meal plan for weight loss"</p>
+                <div className="space-y-2">
+                  <h2 className="text-xl font-extrabold text-foreground tracking-tight">
+                    Ask your AI Wellness Co-Pilot
+                  </h2>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                    Plan healthy diets, generate smart Instamart shopping lists, or fetch macro-balanced meals near you.
+                  </p>
+                </div>
+
+                {/* Quick Start prompts chips */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full pt-4">
+                  {[
+                    { text: "Order a high protein dinner under ₹300", desc: "Keto salads, gym dinners" },
+                    { text: "Suggest groceries for a diabetic diet", desc: "Instamart list with low glycemic items" },
+                    { text: "Plan meals for muscle gain", desc: "7-day customized protein budgets" },
+                    { text: "Find healthy breakfast options nearby", desc: "Oats, millet idlis, avo toast" }
+                  ].map((p, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleQuickPrompt(p.text)}
+                      className="p-3.5 text-left rounded-xl border border-border/60 hover:border-primary/50 bg-card hover:bg-primary/[0.01] transition-all hover:scale-101 text-xs shadow-2xs"
+                    >
+                      <p className="font-bold text-foreground">{p.text}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{p.desc}</p>
+                    </button>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -706,11 +772,11 @@ export default function Chat() {
                   className={cn("flex w-full", msg.role === "user" ? "justify-end" : "justify-start")}
                 >
                   {msg.role === "user" ? (
-                    <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground text-sm leading-relaxed">
+                    <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground text-sm font-semibold leading-relaxed shadow-sm text-left">
                       {msg.content}
                     </div>
                   ) : (
-                    <div className="max-w-[85%] w-full bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
+                    <div className="max-w-[85%] w-full bg-muted rounded-2xl rounded-tl-sm px-4 py-3 border border-border/30">
                       <AIMessageBubble content={msg.content} onAddGroceries={addGroceries} />
                     </div>
                   )}
@@ -720,13 +786,13 @@ export default function Chat() {
 
             {/* Streaming bubble */}
             {isStreaming && (
-              <div className="flex w-full justify-start">
-                <div className="max-w-[85%] w-full bg-muted rounded-2xl rounded-tl-sm px-4 py-3">
+              <div className="flex w-full justify-start animate-pulse">
+                <div className="max-w-[85%] w-full bg-muted rounded-2xl rounded-tl-sm px-4 py-3 border border-border/30">
                   {streamingContent ? (
                     <AIMessageBubble content={streamingContent} onAddGroceries={addGroceries} />
                   ) : (
-                    <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm font-semibold">
+                      <Loader2 className="h-4 w-4 animate-spin" />
                       <span>Thinking...</span>
                     </div>
                   )}
@@ -736,20 +802,20 @@ export default function Chat() {
             )}
           </div>
 
-          {/* Input */}
+          {/* Input Panel */}
           <div className="p-4 border-t bg-background">
-            <form onSubmit={handleSend} className="max-w-3xl mx-auto flex items-center gap-2 relative">
+            <form id="chat-form" onSubmit={handleSend} className="max-w-3xl mx-auto flex items-center gap-2 relative">
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about nutrition, meals, grocery planning..."
-                className="pr-12 py-6 rounded-full shadow-sm"
+                placeholder={activeId ? "Ask about nutrition, meals, grocery planning..." : "Choose a chat or click a prompt above to start..."}
+                className="pr-12 py-6 rounded-full shadow-inner text-sm"
                 disabled={!activeId || isStreaming}
               />
               <Button
                 type="submit"
                 size="icon"
-                className="absolute right-2 h-10 w-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                className="absolute right-2 h-10 w-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all hover:scale-105"
                 disabled={!input.trim() || !activeId || isStreaming}
               >
                 {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
