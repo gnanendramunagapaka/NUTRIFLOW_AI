@@ -267,7 +267,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const userId = session.user.id;
-      if (lastProcessedUserRef.current === userId && user) {
+      const emailConfirmedBefore = supabaseUser?.email_confirmed_at;
+      const emailConfirmedNow = session.user.email_confirmed_at;
+
+      if (lastProcessedUserRef.current === userId && user && emailConfirmedBefore === emailConfirmedNow) {
         // Already loaded profile for this user
         setSupabaseUser(session.user);
         return;
@@ -308,7 +311,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const userId = session.user.id;
         setSupabaseUser(session.user);
         
-        if (lastProcessedUserRef.current === userId && user) {
+        const emailConfirmedBefore = supabaseUser?.email_confirmed_at;
+        const emailConfirmedNow = session.user.email_confirmed_at;
+
+        if (lastProcessedUserRef.current === userId && user && emailConfirmedBefore === emailConfirmedNow) {
           // Already processing/processed this user
           setLoading(false);
           return;

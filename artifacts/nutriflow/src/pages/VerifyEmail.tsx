@@ -52,8 +52,20 @@ export default function VerifyEmail() {
 
     async function checkVerification() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session && session.user.email_confirmed_at) {
+        // Force refresh session to get latest confirmed state from Supabase servers
+        const { data: { session }, error: refreshErr } = await supabase.auth.refreshSession();
+        if (refreshErr) {
+          console.warn("[VerifyEmail] refreshSession background error:", refreshErr.message);
+          return;
+        }
+
+        const { data: { user: sbUser }, error: userErr } = await supabase.auth.getUser();
+        if (userErr) {
+          console.warn("[VerifyEmail] getUser background error:", userErr.message);
+          return;
+        }
+
+        if (sbUser && sbUser.email_confirmed_at) {
           await refreshUser();
           toast({
             title: "Email Verified! 🎉",
@@ -158,27 +170,31 @@ export default function VerifyEmail() {
               onClick={async () => {
                 setIsChecking(true);
                 try {
-                  // 1. Fetch fresh session status
-                  const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-                  if (sessionErr) throw sessionErr;
+                  // 1. Force refresh session from the server to bypass local stale cache
+                  const { data: { session }, error: refreshErr } = await supabase.auth.refreshSession();
+                  if (refreshErr) throw refreshErr;
 
-                  // 2. Refresh the user profile context
+                  // 2. Fetch the latest user from the server
+                  const { data: { user: sbUser }, error: userErr } = await supabase.auth.getUser();
+                  if (userErr) throw userErr;
+
+                  // 3. Refresh user profile context
                   await refreshUser();
 
-                  // 3. Query user profiles to check onboarding completed
+                  // 4. Query user profiles to check onboarding completed
                   let onboarded = false;
-                  if (session?.user) {
+                  if (sbUser) {
                     const { data: profile } = await supabase
                       .from("user_profiles")
                       .select("onboarding_completed")
-                      .eq("id", session.user.id)
+                      .eq("id", sbUser.id)
                       .maybeSingle();
                     if (profile) {
                       onboarded = profile.onboarding_completed;
                     }
                   }
 
-                  if (session?.user?.email_confirmed_at) {
+                  if (sbUser?.email_confirmed_at) {
                     toast({
                       title: "Verification Successful! 🎉",
                       description: "Taking you to the app...",
