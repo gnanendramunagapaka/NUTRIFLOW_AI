@@ -9,51 +9,65 @@ export default function AuthCallback() {
   const { refreshUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
 
     async function handleCallback() {
       try {
-        console.log("[AuthCallback] Exchanging token/hash params...");
+        console.log("[AUTH CALLBACK] Exchanging token/hash params...");
         
-        // 1. Get session. GoTrue client automatically exchanges the code/hash for a session.
-        const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-        
-        if (sessionErr) throw sessionErr;
-        
-        let activeSession = session;
-        if (!activeSession) {
-          // No session found. Let's wait a brief moment in case GoTrue is still processing
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          const { data: { session: retrySession }, error: retryErr } = await supabase.auth.getSession();
-          if (retryErr) throw retryErr;
-          activeSession = retrySession;
-        }
+        const recoveryPromise = (async () => {
+          // 1. Get session. GoTrue client automatically exchanges the code/hash for a session.
+          const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+          if (sessionErr) {
+            console.warn("[AUTH CALLBACK] Error getting session initially:", sessionErr.message);
+          }
+          
+          let activeSession = session;
+          if (!activeSession) {
+            // No session found. Let's wait a brief moment in case GoTrue is still processing
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            const { data: { session: retrySession }, error: retryErr } = await supabase.auth.getSession();
+            if (retryErr) {
+              console.warn("[AUTH CALLBACK] Error getting session on retry:", retryErr.message);
+            }
+            activeSession = retrySession;
+          }
 
-        if (!activeSession) {
-          throw new Error("No active session found. Please try logging in again.");
-        }
+          if (!activeSession) {
+            throw new Error("No active session found.");
+          }
 
-        console.log("[AuthCallback] Session resolved, refreshing user context...");
-        
-        // 2. Refresh the auth state so AuthProvider gets the loaded user profile
-        await refreshUser();
-        
-        // 3. Query the user profile again from Supabase to check onboarding status
-        const { data: profile, error: profileErr } = await supabase
-          .from("user_profiles")
-          .select("onboarding_completed")
-          .eq("id", activeSession.user.id)
-          .maybeSingle();
+          console.log("[AUTH CALLBACK] Session resolved, refreshing user context...");
+          
+          // 2. Refresh the auth state so AuthProvider gets the loaded user profile
+          await refreshUser();
+          
+          // 3. Query the user profile again from Supabase to check onboarding status
+          const { data: profile, error: profileErr } = await supabase
+            .from("user_profiles")
+            .select("onboarding_completed")
+            .eq("id", activeSession.user.id)
+            .maybeSingle();
 
-        if (profileErr) {
-          console.warn("[AuthCallback] Error querying profile (non-critical):", profileErr.message);
-        }
+          if (profileErr) {
+            console.warn("[AUTH CALLBACK] Error querying profile (non-critical):", profileErr.message);
+          }
+
+          return { activeSession, profile };
+        })();
+
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout")), 5000)
+        );
+
+        const { profile } = await Promise.race([recoveryPromise, timeoutPromise]);
 
         if (!active) return;
 
+        console.log("[AUTH CALLBACK] Session restored successfully, redirecting...");
         toast({
           title: "Authentication Verified! 🎉",
           description: "Your session has been restored successfully.",
@@ -63,18 +77,17 @@ export default function AuthCallback() {
         const onboarded = profile?.onboarding_completed ?? false;
         setLocation(onboarded ? "/dashboard" : "/onboarding");
       } catch (err: any) {
-        console.error("[AuthCallback] Callback error:", err);
+        console.error("[AUTH CALLBACK] Callback recovery failed:", err);
         if (!active) return;
-        setError(err.message || "Failed to complete email confirmation.");
+        
         toast({
-          title: "Verification Failed",
-          description: err.message || "Failed to verify. Please try logging in.",
+          title: "Callback Restore Delayed",
+          description: "We are redirecting you to check your verification state manually.",
           variant: "destructive",
         });
-        // Redirect to login after 3 seconds
-        setTimeout(() => {
-          if (active) setLocation("/login");
-        }, 3000);
+
+        // Redirect back to verify email with recovery flag
+        setLocation("/verify-email?recovery=true");
       }
     }
 

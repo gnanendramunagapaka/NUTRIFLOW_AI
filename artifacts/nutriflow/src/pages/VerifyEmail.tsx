@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import { motion } from "framer-motion";
 import { Mail, Loader2, RefreshCw, LogOut, Check } from "lucide-react";
@@ -19,7 +19,9 @@ export default function VerifyEmail() {
   const [isChecking, setIsChecking] = useState(false);
 
   const [search] = useState(() => typeof window !== "undefined" ? window.location.search : "");
-  const email = new URLSearchParams(search).get("email") || supabaseUser?.email || "";
+  const searchParams = new URLSearchParams(search);
+  const email = searchParams.get("email") || supabaseUser?.email || "";
+  const isRecovery = searchParams.get("recovery") === "true";
 
   // Auto redirect if user profile exists and is verified
   useEffect(() => {
@@ -97,6 +99,115 @@ export default function VerifyEmail() {
     };
   }, [resendCooldown]);
 
+  const handleProceedCheck = useCallback(async () => {
+    setIsChecking(true);
+    console.log("[VERIFY FLOW] Starting proceed check...");
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), 5000)
+    );
+
+    try {
+      await Promise.race([
+        (async () => {
+          // STEP 1: refreshSession
+          console.log("[VERIFY FLOW] [SESSION RECOVERY] STEP 1: Refreshing session");
+          try {
+            await supabase.auth.refreshSession();
+          } catch (refreshErr: any) {
+            console.warn("[VERIFY FLOW] [SESSION RECOVERY] refreshSession error:", refreshErr?.message || refreshErr);
+          }
+
+          // STEP 2: getSession
+          console.log("[VERIFY FLOW] [SESSION RECOVERY] STEP 2: Fetching active session");
+          const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+          if (sessionErr) {
+            console.warn("[VERIFY FLOW] [SESSION RECOVERY] getSession error:", sessionErr.message);
+          }
+
+          // STEP 3: if session exists
+          if (session) {
+            console.log("[VERIFY FLOW] [SESSION RECOVERY] STEP 3: Active session found. Syncing profile");
+            const sbUser = session.user;
+            
+            await refreshUser();
+
+            let onboarded = false;
+            try {
+              const { data: profile } = await supabase
+                .from("user_profiles")
+                .select("onboarding_completed")
+                .eq("id", sbUser.id)
+                .maybeSingle();
+              if (profile) {
+                onboarded = profile.onboarding_completed;
+              }
+            } catch (profileErr) {
+              console.warn("[VERIFY FLOW] [SESSION RECOVERY] Profile fetch warning:", profileErr);
+            }
+
+            toast({
+              title: "Verification Successful! 🎉",
+              description: "Taking you to the app...",
+            });
+            setLocation(onboarded ? "/dashboard" : "/onboarding");
+            return;
+          }
+
+          // STEP 4: silent recovery getUser()
+          console.log("[VERIFY FLOW] [SESSION RECOVERY] STEP 4: Session missing, attempting silent recovery via getUser()");
+          const { data: { user: sbUser }, error: getUserErr } = await supabase.auth.getUser();
+          if (getUserErr) {
+            console.warn("[VERIFY FLOW] [SESSION RECOVERY] getUser error:", getUserErr.message);
+          }
+
+          // STEP 5: if user exists but no active session
+          if (sbUser) {
+            console.log("[VERIFY FLOW] [SESSION RECOVERY] STEP 5: User exists but no active session. Redirecting to login page");
+            toast({
+              title: "Email verified successfully.",
+              description: "Please login to continue.",
+            });
+            const targetEmail = sbUser.email || email || "";
+            setLocation(`/login?verified=true&email=${encodeURIComponent(targetEmail)}`);
+            return;
+          }
+
+          // Fallback if absolutely no user or session
+          console.warn("[VERIFY FLOW] [SESSION RECOVERY] Silent recovery failed: No user or session found.");
+          toast({
+            title: "Verification Pending",
+            description: "Please check your inbox or spam folder and click the verification link.",
+            variant: "destructive",
+          });
+        })(),
+        timeoutPromise
+      ]);
+    } catch (e: any) {
+      console.error("[VERIFY FLOW] [SESSION RECOVERY] Proceed flow failed/timed out:", e);
+      toast({
+        title: "Session Recovery Delayed",
+        description: "Checking status took too long. You can sign in directly.",
+        variant: "destructive",
+      });
+      setLocation(`/login?email=${encodeURIComponent(email || "")}`);
+    } finally {
+      setIsChecking(false);
+    }
+  }, [email, refreshUser, setLocation, toast]);
+
+  // Trigger recovery check automatically if land via callback failure (?recovery=true)
+  useEffect(() => {
+    if (isRecovery) {
+      console.log("[VERIFY FLOW] Landed on verify-email with recovery=true. Automatically checking status...");
+      toast({
+        title: "Restoring Session",
+        description: "Checking if your email has been verified. Please wait...",
+      });
+      handleProceedCheck();
+    }
+  }, [isRecovery, handleProceedCheck, toast]);
+
   const handleResend = async () => {
     const targetEmail = email || supabaseUser?.email;
     if (!targetEmail || resendCooldown > 0 || isResending) return;
@@ -167,56 +278,7 @@ export default function VerifyEmail() {
 
           <div className="space-y-3 pt-2">
             <Button
-              onClick={async () => {
-                setIsChecking(true);
-                try {
-                  // 1. Force refresh session from the server to bypass local stale cache
-                  const { data: { session }, error: refreshErr } = await supabase.auth.refreshSession();
-                  if (refreshErr) throw refreshErr;
-
-                  // 2. Fetch the latest user from the server
-                  const { data: { user: sbUser }, error: userErr } = await supabase.auth.getUser();
-                  if (userErr) throw userErr;
-
-                  // 3. Refresh user profile context
-                  await refreshUser();
-
-                  // 4. Query user profiles to check onboarding completed
-                  let onboarded = false;
-                  if (sbUser) {
-                    const { data: profile } = await supabase
-                      .from("user_profiles")
-                      .select("onboarding_completed")
-                      .eq("id", sbUser.id)
-                      .maybeSingle();
-                    if (profile) {
-                      onboarded = profile.onboarding_completed;
-                    }
-                  }
-
-                  if (sbUser?.email_confirmed_at) {
-                    toast({
-                      title: "Verification Successful! 🎉",
-                      description: "Taking you to the app...",
-                    });
-                    setLocation(onboarded ? "/dashboard" : "/onboarding");
-                  } else {
-                    toast({
-                      title: "Email Not Confirmed Yet",
-                      description: "Please check your inbox or spam folder and click the verification link.",
-                      variant: "destructive",
-                    });
-                  }
-                } catch (e: any) {
-                  toast({
-                    title: "Status Check Failed",
-                    description: e.message || "Failed to update auth status.",
-                    variant: "destructive"
-                  });
-                } finally {
-                  setIsChecking(false);
-                }
-              }}
+              onClick={handleProceedCheck}
               disabled={isChecking}
               className="w-full h-11 text-sm font-bold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-md flex items-center justify-center gap-1.5 hover-elevate transition-all duration-200"
             >
@@ -231,6 +293,7 @@ export default function VerifyEmail() {
                 </>
               )}
             </Button>
+
 
             <Button
               onClick={handleResend}
