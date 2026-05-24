@@ -36,9 +36,9 @@ export function Navbar() {
     { href: "/profile", label: "Profile", icon: User },
   ];
 
-  const handleLogout = () => {
-    logout();
-    setLocation("/login");
+  const handleLogout = async () => {
+    await logout();
+    setLocation("/");
   };
 
   return (
@@ -148,6 +148,13 @@ export function Navbar() {
               </span>
             </Link>
           ))}
+          <button
+            onClick={handleLogout}
+            className="flex flex-col items-center gap-1 text-xs cursor-pointer transition-colors text-destructive hover:opacity-80"
+          >
+            <LogOut className="h-5 w-5" />
+            <span>Logout</span>
+          </button>
         </div>
       )}
     </header>

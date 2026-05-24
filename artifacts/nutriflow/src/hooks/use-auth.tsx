@@ -137,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const lastProcessedUserRef = useRef<string | null>(null);
 
   // Build fallback user from Supabase session
-  const buildFallbackUser = (session: any, onboardingCompleted = true): User => {
+  const buildFallbackUser = (session: any, onboardingCompleted = false): User => {
     const emailPart = session.user.email?.split("@")[0] || "";
     const defaultName =
       session.user.user_metadata?.name ||
@@ -383,11 +383,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async (): Promise<void> => {
     const userId = supabaseUser?.id;
+    lastProcessedUserRef.current = null;
+
     try {
       await supabase.auth.signOut();
     } catch (err) {
       console.warn("[Auth] Logout error:", err);
     }
+
     setUser(null);
     setSupabaseUser(null);
 
@@ -405,10 +408,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("nutriflow_cart_guest");
     localStorage.removeItem("nutriflow_last_order");
 
+    // Clear any Supabase-stored auth session keys and tokens
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith("sb-") || key.includes("supabase") || key.startsWith("nutriflow_"))) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (e) {
+      console.warn("[Auth] Error clearing localStorage keys:", e);
+    }
+
+    try {
+      sessionStorage.clear();
+    } catch (e) {
+      // ignore
+    }
+
     try {
       queryClient.clear();
     } catch {
       // ignore
+    }
+
+    // Force redirect to landing page and full reload to clear all active JS memory/states
+    if (typeof window !== "undefined") {
+      window.location.href = "/";
     }
   };
 

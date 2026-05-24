@@ -51,7 +51,7 @@ const forgotSchema = z.object({
 type AuthMode = "login" | "signup" | "forgot";
 
 export default function Login() {
-  const { user, onboarded, login, signup, loginWithGoogle } = useAuth();
+  const { user, onboarded, login, signup, loginWithGoogle, logout } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
@@ -191,6 +191,66 @@ export default function Login() {
       setSsoLoading(null);
     }
   };
+
+  if (user) {
+    const handleContinue = () => {
+      if (onboarded) {
+        setLocation("/dashboard");
+      } else {
+        setLocation("/onboarding");
+      }
+    };
+
+    return (
+      <AuthLayout>
+        <Card className="border-none shadow-xl bg-card/85 backdrop-blur-md overflow-hidden rounded-2xl w-full max-w-md">
+          <CardHeader className="text-center pb-4 pt-8">
+            <div className="space-y-1.5">
+              <div className="mx-auto bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center text-primary mb-3 shadow-inner">
+                <ShieldCheck className="h-7 w-7 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold tracking-tight text-foreground">
+                Already Signed In
+              </CardTitle>
+              <CardDescription className="text-muted-foreground/90 max-w-sm mx-auto">
+                You are currently logged in as:
+              </CardDescription>
+              <div className="mt-3 p-3 bg-muted/50 border rounded-xl max-w-xs mx-auto">
+                <p className="font-semibold text-sm text-foreground">{user.name || 'User'}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="px-6 pb-8 space-y-4 text-center">
+            <Button
+              onClick={handleContinue}
+              className="w-full h-11 text-sm font-bold rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground shadow-md transition-all flex items-center justify-center gap-1.5"
+            >
+              Continue to {onboarded ? "Dashboard" : "Onboarding"}
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <div className="relative py-2">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <span className="relative flex justify-center text-xs uppercase bg-transparent px-2 text-muted-foreground">
+                Or
+              </span>
+            </div>
+            <Button
+              onClick={async () => {
+                await logout();
+              }}
+              variant="outline"
+              className="w-full h-11 text-sm font-semibold rounded-xl border-muted-foreground/20 text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5"
+            >
+              Use Another Account (Log Out)
+            </Button>
+          </CardContent>
+        </Card>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout>
