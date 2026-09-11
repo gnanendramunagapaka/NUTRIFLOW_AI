@@ -178,9 +178,18 @@ export default function Login() {
         await connectSwiggyAccount();
         toast({
           title: "Swiggy Connected! ⚡",
-          description: "Authenticated with Swiggy MCP. Session and addresses active.",
+          description: "Authenticated with Swiggy MCP. Navigating to Checkout...",
         });
-        setLocation(onboarded ? "/dashboard" : "/onboarding");
+
+        // Perform immediate navigation
+        setLocation("/checkout");
+
+        // Fallback hard redirect if route guard intercepts state delay
+        setTimeout(() => {
+          if (window.location.pathname === "/login") {
+            window.location.href = "/checkout";
+          }
+        }, 300);
       } else {
         // Fallback mock sign-in for Apple SSO
         await new Promise((resolve) => setTimeout(resolve, 1500));
