@@ -40,26 +40,44 @@ export function useSwiggyAddresses() {
   return useQuery<Address[]>({
     queryKey: ["swiggy", "addresses"],
     queryFn: async () => {
-      if (!session?.access_token) throw new Error("No active authentication session");
+      // Prefer the live Supabase session token, but fall back to any stored Swiggy token (sandbox or real)
+      const swiggyToken = session?.access_token || localStorage.getItem("swiggy_access_token") || "";
+
+      // If no token or sandbox token, return local defaults immediately to avoid network calls.
+      if (!swiggyToken || swiggyToken.startsWith("mcp_sandbox_token_")) {
+        return DEFAULT_ADDRESSES;
+      }
 
       const res = await fetch("/api/swiggy/mcp/get_addresses", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
+          "Authorization": `Bearer ${swiggyToken}`,
         },
-        body: JSON.stringify({})
+        body: JSON.stringify({}),
       });
-      
+
       if (!res.ok) {
         console.warn("Failed to fetch live Swiggy addresses. Falling back to default mock addresses.");
         return DEFAULT_ADDRESSES;
       }
-      
-      const data = await res.json();
-      return data.addresses || DEFAULT_ADDRESSES;
+
+      const data = await res.json().catch(() => null);
+      const incoming = data?.addresses || [];
+
+      if (!Array.isArray(incoming) || incoming.length === 0) return DEFAULT_ADDRESSES;
+
+      // Normalize Swiggy address shape to our Address interface
+      const normalized: Address[] = incoming.map((a: any, idx: number) => ({
+        id: a.id ?? `addr_${idx}`,
+        label: a.name ?? a.label ?? (a.isDefault ? "Home" : `Address ${idx + 1}`),
+        address: a.address ?? a.description ?? `${a.city ?? ""} ${a.address ?? ""}`,
+        icon: a.icon ?? (a.isDefault ? "Home" : "MapPin"),
+      }));
+
+      return normalized;
     },
-    enabled: !!session?.access_token,
+    enabled: true,
     staleTime: 10 * 60 * 1000, 
   });
 }

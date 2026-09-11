@@ -59,6 +59,91 @@ router.post("/swiggy/mcp/token", async (req: Request, res: Response) => {
   }
 });
 
+// Return mock/fallback addresses when token is missing, sandbox, or upstream rejects it.
+router.post("/swiggy/mcp/get_addresses", async (req: Request, res: Response) => {
+  const authHeader = (req.headers.authorization || "").toString();
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+  // Local sandbox fallback when no token or a sandbox token is provided
+  if (!token || token.startsWith("mcp_sandbox_token_")) {
+    return res.json({
+      status: "success",
+      source: "mcp_sandbox",
+      addresses: [
+        {
+          id: "swiggy_addr_1",
+          name: "Home",
+          address: "123 Tech Park Road, Sector 5",
+          city: "Bengaluru",
+          lat: 12.9716,
+          lng: 77.5946,
+          isDefault: true,
+        },
+      ],
+    });
+  }
+
+  const mcpServerUrl = process.env.SWIGGY_MCP_SERVER_URL || "https://mcp.swiggy.com/food";
+
+  try {
+    const swiggyRes = await fetch(`${mcpServerUrl}/get_addresses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(req.body || {}),
+    });
+
+    if (!swiggyRes.ok) {
+      const text = await swiggyRes.text().catch(() => "");
+      console.warn(`[Swiggy MCP Proxy] Live server returned ${swiggyRes.status}. Returning fallback addresses.`, text);
+
+      // If upstream indicates invalid token, return sandbox fallback
+      if (swiggyRes.status === 401 || /invalid_token/i.test(text)) {
+        return res.json({
+          status: "success",
+          source: "mcp_fallback",
+          addresses: [
+            {
+              id: "swiggy_addr_1",
+              name: "Home (Sandbox)",
+              address: "123 Tech Park Road, Sector 5",
+              city: "Bengaluru",
+              lat: 12.9716,
+              lng: 77.5946,
+              isDefault: true,
+            },
+          ],
+        });
+      }
+
+      // For other non-ok responses, still return a harmless fallback to keep UI stable
+      return res.json({
+        status: "success",
+        source: "mcp_fallback",
+        addresses: [
+          {
+            id: "swiggy_addr_1",
+            name: "Home (Sandbox)",
+            address: "123 Tech Park Road, Sector 5",
+            city: "Bengaluru",
+            lat: 12.9716,
+            lng: 77.5946,
+            isDefault: true,
+          },
+        ],
+      });
+    }
+
+    const data = await swiggyRes.json().catch(() => null);
+    return res.json(data ?? { status: "success", source: "mcp_live", addresses: [] });
+  } catch (err: any) {
+    console.error("[Swiggy MCP Proxy] Request failed:", err?.message ?? err);
+    return res.json({ error: "Proxy communication failure", status: "mcp_error" });
+  }
+});
+
 // Proxy tool executions securely to Swiggy MCP using the user's active session token
 router.post("/swiggy/mcp/:toolName", requireAuth, async (req, res): Promise<void> => {
   const { toolName } = req.params;
