@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useCart, useSwiggyAddresses } from "@/hooks/use-cart";
+import SwiggyAuthModal from "@/components/SwiggyAuthModal";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -50,11 +51,12 @@ export default function Checkout() {
     clearCart,
   } = useCart();
 
-  const { data: liveAddresses, isLoading: isLoadingAddresses } = useSwiggyAddresses();
+  const { data: liveAddresses, isLoading: isLoadingAddresses, refetch: refetchSwiggyAddresses } = useSwiggyAddresses();
   const activeAddresses = liveAddresses || addresses;
 
   const [swiggyConnected, setSwiggyConnected] = useState(() => isSwiggyConnected());
   const [isConnectingSwiggy, setIsConnectingSwiggy] = useState(false);
+  const [isSwiggyModalOpen, setIsSwiggyModalOpen] = useState(false);
 
   const handleConnectSwiggy = async () => {
     setIsConnectingSwiggy(true);
@@ -167,18 +169,12 @@ export default function Checkout() {
           ) : (
             <Button
               size="sm"
-              onClick={handleConnectSwiggy}
+              onClick={() => setIsSwiggyModalOpen(true)}
               disabled={isConnectingSwiggy}
               className="bg-[#FC8019] hover:bg-[#E26E10] text-white text-xs font-bold rounded-xl px-4 h-8 shrink-0 shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover-elevate self-start sm:self-auto"
             >
-              {isConnectingSwiggy ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <>
-                  <span>⚡</span>
-                  <span>Connect Swiggy</span>
-                </>
-              )}
+              <span>⚡</span>
+              <span>Connect Swiggy</span>
             </Button>
           )}
         </div>
@@ -201,41 +197,60 @@ export default function Checkout() {
                 <CardDescription className="text-xs">Choose where you'd like your wellness order delivered.</CardDescription>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                  {activeAddresses.map((addr) => {
-                    const isSelected = selectedAddress.id === addr.id;
-                    const emoji = addr.icon === "Home" ? "🏠" : addr.icon === "Briefcase" ? "💼" : "📍";
-                    return (
-                      <div
-                        key={addr.id}
-                        onClick={() => setSelectedAddress(addr)}
-                        className={cn(
-                          "p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between space-y-3",
-                          isSelected 
-                            ? "border-emerald-600 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-xs" 
-                            : "border-border hover:border-border/80 bg-background"
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1">
-                            <span>{emoji}</span> {addr.label}
-                          </span>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[9px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
-                              Swiggy Verified
-                            </span>
-                            {isSelected && (
-                              <span className="h-4 w-4 rounded-full bg-emerald-600 flex items-center justify-center text-white shrink-0">
-                                <CheckCircle className="h-3 w-3" />
-                              </span>
+                {swiggyConnected ? (
+                  // If connected, show live addresses if available
+                  (liveAddresses && liveAddresses.length > 0) ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+                      {liveAddresses.map((addr) => {
+                        const isSelected = selectedAddress.id === addr.id;
+                        const emoji = addr.icon === "Home" ? "🏠" : addr.icon === "Briefcase" ? "💼" : "📍";
+                        return (
+                          <div
+                            key={addr.id}
+                            onClick={() => setSelectedAddress(addr)}
+                            className={cn(
+                              "p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between space-y-3",
+                              isSelected 
+                                ? "border-emerald-600 bg-emerald-50/20 dark:bg-emerald-950/10 shadow-xs" 
+                                : "border-border hover:border-border/80 bg-background"
                             )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1">
+                                <span>{emoji}</span> {addr.label}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[9px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                                  Swiggy Verified
+                                </span>
+                                {isSelected && (
+                                  <span className="h-4 w-4 rounded-full bg-emerald-600 flex items-center justify-center text-white shrink-0">
+                                    <CheckCircle className="h-3 w-3" />
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-relaxed">{addr.address}</p>
                           </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground leading-relaxed">{addr.address}</p>
-                      </div>
-                    );
-                  })}
-                </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <p className="text-sm text-muted-foreground mb-3">No saved Swiggy addresses found.</p>
+                      <Button onClick={() => setIsSwiggyModalOpen(true)} className="bg-[#FC8019] hover:bg-[#E26E10] text-white">
+                        ⚡ Connect Swiggy to Load Saved Addresses
+                      </Button>
+                    </div>
+                  )
+                ) : (
+                  <div className="text-center">
+                    <p className="text-sm text-muted-foreground mb-3">Connect your Swiggy account to load saved delivery addresses.</p>
+                    <Button onClick={() => setIsSwiggyModalOpen(true)} className="bg-[#FC8019] hover:bg-[#E26E10] text-white">
+                      ⚡ Connect Swiggy to Load Saved Addresses
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -476,6 +491,20 @@ export default function Checkout() {
           </div>
         </div>
       </div>
+      <SwiggyAuthModal
+        isOpen={isSwiggyModalOpen}
+        onClose={() => setIsSwiggyModalOpen(false)}
+        onSuccess={async () => {
+          setIsSwiggyModalOpen(false);
+          setSwiggyConnected(true);
+          try {
+            await refetchSwiggyAddresses?.();
+          } catch {
+            // ignore
+          }
+        }}
+      />
     </Layout>
   );
 }
+

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
+import SwiggyAuthModal from "@/components/SwiggyAuthModal";
 import { connectSwiggyAccount } from "@/lib/swiggyAuth";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,6 +61,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ssoLoading, setSsoLoading] = useState<"google" | "apple" | "swiggy" | null>(null);
+  const [isSwiggyModalOpen, setIsSwiggyModalOpen] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
   // Hook Forms
@@ -115,6 +117,7 @@ export default function Login() {
         title: "Signed in successfully",
         description: "Welcome back to NutriFlow AI!",
       });
+      setLocation("/dashboard");
     } catch (err: any) {
       console.error("[Login DEBUG] Supabase login error:", err);
       toast({
@@ -174,32 +177,8 @@ export default function Login() {
       if (provider === "google") {
         await loginWithGoogle();
       } else if (provider === "swiggy") {
-        // Pre-set local guest flags so the auth hook / route guards can react immediately
-        try {
-          localStorage.setItem("swiggy_mcp_connected", "true");
-          localStorage.setItem("nutriflow_guest_session", "true");
-          // dispatch same-tab event consumed by the auth provider
-          window.dispatchEvent(new Event("nutriflow-guest-session"));
-        } catch {
-          // ignore
-        }
-
-        // Connect Swiggy — connectSwiggyAccount will attempt anonymous Supabase sign-in
-        await connectSwiggyAccount();
-        toast({
-          title: "Swiggy Connected! ⚡",
-          description: "Authenticated with Swiggy MCP. Navigating to Checkout...",
-        });
-
-        // Perform immediate navigation
-        setLocation("/checkout");
-
-        // Fallback hard redirect if route guard intercepts state delay
-        setTimeout(() => {
-          if (window.location.pathname === "/login") {
-            window.location.href = "/checkout";
-          }
-        }, 300);
+        // Open the Swiggy phone+OTP modal for real authentication
+        setIsSwiggyModalOpen(true);
       } else {
         // Fallback mock sign-in for Apple SSO
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -276,6 +255,14 @@ export default function Login() {
             </Button>
           </CardContent>
         </Card>
+        <SwiggyAuthModal
+          isOpen={isSwiggyModalOpen}
+          onClose={() => setIsSwiggyModalOpen(false)}
+          onSuccess={() => {
+            setIsSwiggyModalOpen(false);
+            setLocation("/dashboard");
+          }}
+        />
       </AuthLayout>
     );
   }
@@ -787,6 +774,18 @@ export default function Login() {
           </AnimatePresence>
         </CardContent>
       </Card>
+        <SwiggyAuthModal
+          isOpen={isSwiggyModalOpen}
+          onClose={() => setIsSwiggyModalOpen(false)}
+          onSuccess={() => {
+            setIsSwiggyModalOpen(false);
+            setLocation("/dashboard");
+          }}
+        />
     </AuthLayout>
   );
 }
+
+
+// Swiggy modal hook-up at file root so it's present in the component tree
+// Note: Modal is controlled by local state above and will navigate on success.
