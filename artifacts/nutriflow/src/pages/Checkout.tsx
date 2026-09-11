@@ -22,9 +22,11 @@ import {
   ChevronRight, 
   Sparkles,
   ArrowLeft,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { connectSwiggyAccount, isSwiggyConnected } from "@/lib/swiggyAuth";
 
 export default function Checkout() {
   const [, setLocation] = useLocation();
@@ -50,6 +52,25 @@ export default function Checkout() {
 
   const { data: liveAddresses, isLoading: isLoadingAddresses } = useSwiggyAddresses();
   const activeAddresses = liveAddresses || addresses;
+
+  const [swiggyConnected, setSwiggyConnected] = useState(() => isSwiggyConnected());
+  const [isConnectingSwiggy, setIsConnectingSwiggy] = useState(false);
+
+  const handleConnectSwiggy = async () => {
+    setIsConnectingSwiggy(true);
+    try {
+      const success = await connectSwiggyAccount();
+      if (success) {
+        setSwiggyConnected(true);
+        toast({
+          title: "Swiggy Account Linked! ⚡",
+          description: "Your Swiggy delivery addresses and partner benefits are active.",
+        });
+      }
+    } finally {
+      setIsConnectingSwiggy(false);
+    }
+  };
 
   const [isPlacing, setIsPlacing] = useState(false);
   const [couponCode, setCouponCode] = useState("WELLNESS10");
@@ -138,9 +159,28 @@ export default function Checkout() {
               <p className="text-xs text-muted-foreground">Fast, contactless, hyper-local delivery from healthy certified kitchen partners.</p>
             </div>
           </div>
-          <span className="text-[10px] font-extrabold text-orange-700 bg-orange-100/50 dark:bg-orange-950/40 px-3 py-1 rounded-full uppercase tracking-wider self-start sm:self-auto border border-orange-200/50">
-            Swiggy Integration Ready
-          </span>
+          {swiggyConnected ? (
+            <span className="text-[10px] font-extrabold text-emerald-700 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-950/40 px-3 py-1.5 rounded-full uppercase tracking-wider self-start sm:self-auto border border-emerald-200/60 flex items-center gap-1.5">
+              <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
+              <span>Swiggy Linked</span>
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              onClick={handleConnectSwiggy}
+              disabled={isConnectingSwiggy}
+              className="bg-[#FC8019] hover:bg-[#E26E10] text-white text-xs font-bold rounded-xl px-4 h-8 shrink-0 shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover-elevate self-start sm:self-auto"
+            >
+              {isConnectingSwiggy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <>
+                  <span>⚡</span>
+                  <span>Connect Swiggy</span>
+                </>
+              )}
+            </Button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

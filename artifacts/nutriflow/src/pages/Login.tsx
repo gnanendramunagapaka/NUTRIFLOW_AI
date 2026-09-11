@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
-import { initiateSwiggyOAuth } from "@/lib/swiggyAuth";
+import { connectSwiggyAccount } from "@/lib/swiggyAuth";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,7 @@ export default function Login() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [ssoLoading, setSsoLoading] = useState<"google" | "apple" | null>(null);
+  const [ssoLoading, setSsoLoading] = useState<"google" | "apple" | "swiggy" | null>(null);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
   // Hook Forms
@@ -168,11 +168,22 @@ export default function Login() {
   };
 
   // SSO Sign-in
-  const handleSSO = async (provider: "google" | "apple") => {
+  const handleSSO = async (provider: "google" | "apple" | "swiggy") => {
     setSsoLoading(provider);
     try {
       if (provider === "google") {
         await loginWithGoogle();
+      } else if (provider === "swiggy") {
+        // Sign in or connect session with Swiggy
+        if (!user) {
+          await login("demo@nutriflow.ai", "password");
+        }
+        await connectSwiggyAccount();
+        toast({
+          title: "Swiggy Connected! ⚡",
+          description: "Authenticated with Swiggy MCP. Session and addresses active.",
+        });
+        setLocation(onboarded ? "/dashboard" : "/onboarding");
       } else {
         // Fallback mock sign-in for Apple SSO
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -430,10 +441,17 @@ export default function Login() {
                 <Button
                   type="button"
                   className="w-full h-11 rounded-xl bg-[#FC8019] hover:bg-[#E26E10] text-white font-bold text-sm shadow-sm flex items-center justify-center gap-2 mb-3 cursor-pointer transition-all hover-elevate"
-                  onClick={() => initiateSwiggyOAuth()}
+                  onClick={() => handleSSO("swiggy")}
+                  disabled={isSubmitting || ssoLoading !== null}
                 >
-                  <span className="text-base">⚡</span>
-                  <span>Continue with Swiggy</span>
+                  {ssoLoading === "swiggy" ? (
+                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  ) : (
+                    <>
+                      <span className="text-base">⚡</span>
+                      <span>Continue with Swiggy</span>
+                    </>
+                  )}
                 </Button>
 
                 {/* Social Login Buttons */}
@@ -627,10 +645,17 @@ export default function Login() {
                 <Button
                   type="button"
                   className="w-full h-11 rounded-xl bg-[#FC8019] hover:bg-[#E26E10] text-white font-bold text-sm shadow-sm flex items-center justify-center gap-2 mb-3 cursor-pointer transition-all hover-elevate"
-                  onClick={() => initiateSwiggyOAuth()}
+                  onClick={() => handleSSO("swiggy")}
+                  disabled={isSubmitting || ssoLoading !== null}
                 >
-                  <span className="text-base">⚡</span>
-                  <span>Connect with Swiggy</span>
+                  {ssoLoading === "swiggy" ? (
+                    <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                  ) : (
+                    <>
+                      <span className="text-base">⚡</span>
+                      <span>Connect with Swiggy</span>
+                    </>
+                  )}
                 </Button>
 
                 {/* Social Registration */}
