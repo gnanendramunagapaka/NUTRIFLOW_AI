@@ -174,10 +174,7 @@ export default function Login() {
       if (provider === "google") {
         await loginWithGoogle();
       } else if (provider === "swiggy") {
-        // Sign in or connect session with Swiggy
-        if (!user) {
-          await login("demo@nutriflow.ai", "password");
-        }
+        // Connect Swiggy — session is handled inside connectSwiggyAccount()
         await connectSwiggyAccount();
         toast({
           title: "Swiggy Connected! ⚡",
