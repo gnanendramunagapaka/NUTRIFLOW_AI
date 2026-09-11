@@ -16,18 +16,47 @@ export default function AuthCallback() {
 
     async function handleCallback() {
       try {
-        console.log("[AUTH CALLBACK] Exchanging token/hash params...");
-        
+        console.log("[AUTH CALLBACK] Processing callback parameters...");
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+
+        // 1. Check for incoming Swiggy OAuth tokens / authorization codes
+        const swiggyError = urlParams.get("error") || hashParams.get("error");
+        const swiggyCode = urlParams.get("code");
+        const swiggyToken = urlParams.get("access_token") || hashParams.get("access_token") || urlParams.get("swiggy_token");
+
+        if (swiggyError) {
+          console.warn("[AUTH CALLBACK] Swiggy OAuth error reported:", swiggyError);
+          toast({
+            title: "Swiggy Authorization Notice",
+            description: `Swiggy OAuth returned: ${swiggyError}`,
+            variant: "destructive",
+          });
+        }
+
+        if (swiggyToken || swiggyCode) {
+          console.log("[AUTH CALLBACK] Storing Swiggy OAuth credentials...");
+          const tokenToStore = swiggyToken || swiggyCode || "";
+          localStorage.setItem("swiggy_access_token", tokenToStore);
+          localStorage.setItem("swiggy_oauth_connected", "true");
+
+          toast({
+            title: "Swiggy Connected! ⚡",
+            description: "Your Swiggy account has been linked successfully.",
+          });
+        }
+
         const recoveryPromise = (async () => {
-          // 1. Get session. GoTrue client automatically exchanges the code/hash for a session.
+          // 2. Get Supabase session. GoTrue client automatically exchanges the code/hash for a session.
           const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
           if (sessionErr) {
             console.warn("[AUTH CALLBACK] Error getting session initially:", sessionErr.message);
           }
-          
+
           let activeSession = session;
           if (!activeSession) {
-            // No session found. Let's wait a brief moment in case GoTrue is still processing
+            // Wait a brief moment in case GoTrue is still processing
             await new Promise((resolve) => setTimeout(resolve, 1500));
             const { data: { session: retrySession }, error: retryErr } = await supabase.auth.getSession();
             if (retryErr) {
@@ -37,15 +66,19 @@ export default function AuthCallback() {
           }
 
           if (!activeSession) {
+            // If Swiggy OAuth was processed without an active Supabase session, proceed gracefully
+            if (swiggyToken || swiggyCode) {
+              return { activeSession: null, profile: null };
+            }
             throw new Error("No active session found.");
           }
 
           console.log("[AUTH CALLBACK] Session resolved, refreshing user context...");
-          
-          // 2. Refresh the auth state so AuthProvider gets the loaded user profile
+
+          // Refresh the auth state so AuthProvider gets the loaded user profile
           await refreshUser();
-          
-          // 3. Query the user profile again from Supabase to check onboarding status
+
+          // Query the user profile from Supabase to check onboarding status
           const { data: profile, error: profileErr } = await supabase
             .from("user_profiles")
             .select("onboarding_completed")
@@ -59,11 +92,11 @@ export default function AuthCallback() {
           return { activeSession, profile };
         })();
 
-        const timeoutPromise = new Promise<never>((_, reject) =>
+        const timeoutPromise = new Promise<{ activeSession: any; profile: any }>((_, reject) =>
           setTimeout(() => reject(new Error("Timeout")), 5000)
         );
 
-        const { profile } = await Promise.race([recoveryPromise, timeoutPromise]);
+        const { profile, activeSession } = await Promise.race([recoveryPromise, timeoutPromise]);
 
         if (!active) return;
 
@@ -73,13 +106,20 @@ export default function AuthCallback() {
           description: "Your session has been restored successfully.",
         });
 
-        // 4. Redirect based on onboarding state
-        const onboarded = profile?.onboarding_completed ?? false;
+        // 3. Redirect based on return-to or onboarding state
+        const returnTo = localStorage.getItem("swiggy_auth_return_to");
+        if (returnTo) {
+          localStorage.removeItem("swiggy_auth_return_to");
+          setLocation(returnTo);
+          return;
+        }
+
+        const onboarded = profile?.onboarding_completed ?? (activeSession ? false : true);
         setLocation(onboarded ? "/dashboard" : "/onboarding");
       } catch (err: any) {
         console.error("[AUTH CALLBACK] Callback recovery failed:", err);
         if (!active) return;
-        
+
         toast({
           title: "Callback Restore Delayed",
           description: "We are redirecting you to check your verification state manually.",

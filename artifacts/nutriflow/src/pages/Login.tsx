@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
+import { initiateSwiggyOAuth } from "@/lib/swiggyAuth";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -425,6 +426,16 @@ export default function Login() {
                   </div>
                 </div>
 
+                {/* Swiggy OAuth Button */}
+                <Button
+                  type="button"
+                  className="w-full h-11 rounded-xl bg-[#FC8019] hover:bg-[#E26E10] text-white font-bold text-sm shadow-sm flex items-center justify-center gap-2 mb-3 cursor-pointer transition-all hover-elevate"
+                  onClick={() => initiateSwiggyOAuth()}
+                >
+                  <span className="text-base">⚡</span>
+                  <span>Continue with Swiggy</span>
+                </Button>
+
                 {/* Social Login Buttons */}
                 <div className="grid grid-cols-2 gap-3">
                   <Button
@@ -603,7 +614,7 @@ export default function Login() {
                 </form>
 
                 {/* Social Dividers */}
-                <div className="relative my-5">
+                <div className="relative my-6">
                   <div className="absolute inset-0 flex items-center">
                     <span className="w-full border-t border-border" />
                   </div>
@@ -611,6 +622,16 @@ export default function Login() {
                     <span className="bg-card px-3 text-muted-foreground font-semibold">Or register with</span>
                   </div>
                 </div>
+
+                {/* Swiggy OAuth Button */}
+                <Button
+                  type="button"
+                  className="w-full h-11 rounded-xl bg-[#FC8019] hover:bg-[#E26E10] text-white font-bold text-sm shadow-sm flex items-center justify-center gap-2 mb-3 cursor-pointer transition-all hover-elevate"
+                  onClick={() => initiateSwiggyOAuth()}
+                >
+                  <span className="text-base">⚡</span>
+                  <span>Connect with Swiggy</span>
+                </Button>
 
                 {/* Social Registration */}
                 <div className="grid grid-cols-2 gap-3">
