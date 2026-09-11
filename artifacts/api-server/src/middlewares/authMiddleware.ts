@@ -11,8 +11,12 @@ declare global {
   }
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://tnjnvsimwjsyewbshhsx.supabase.co";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRuam52c2ltd2pzeWV3YnNoaHN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk1MjY1NDgsImV4cCI6MjA5NTEwMjU0OH0.0P37ulhMU0bs9BoOq0GMAxrX5k6x3hsIYuoNhg1hkzU";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("FATAL: Supabase URL and Anon Key must be provided in environment variables.");
+}
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 

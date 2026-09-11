@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./use-auth";
 
@@ -28,10 +29,40 @@ export interface Address {
   icon: string;
 }
 
-const DEFAULT_ADDRESSES: Address[] = [
+export const DEFAULT_ADDRESSES: Address[] = [
   { id: "home", label: "Home", address: "Flat 402, Block A, Green Meadows Apartments, HSR Layout, Bengaluru", icon: "Home" },
   { id: "work", label: "Work", address: "7th Floor, Tower B, Prestige Tech Park, Marathahalli, Bengaluru", icon: "Briefcase" },
 ];
+
+export function useSwiggyAddresses() {
+  const { session } = useAuth();
+
+  return useQuery<Address[]>({
+    queryKey: ["swiggy", "addresses"],
+    queryFn: async () => {
+      if (!session?.access_token) throw new Error("No active authentication session");
+
+      const res = await fetch("/api/swiggy/mcp/get_addresses", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({})
+      });
+      
+      if (!res.ok) {
+        console.warn("Failed to fetch live Swiggy addresses. Falling back to default mock addresses.");
+        return DEFAULT_ADDRESSES;
+      }
+      
+      const data = await res.json();
+      return data.addresses || DEFAULT_ADDRESSES;
+    },
+    enabled: !!session?.access_token,
+    staleTime: 10 * 60 * 1000, 
+  });
+}
 
 interface CartContextType {
   items: CartItem[];
@@ -61,9 +92,20 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const { data: liveAddresses } = useSwiggyAddresses();
+  const addresses = liveAddresses || DEFAULT_ADDRESSES;
   const [items, setItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState<Address>(DEFAULT_ADDRESSES[0]);
+
+  useEffect(() => {
+    if (liveAddresses && liveAddresses.length > 0) {
+      setSelectedAddress((current) => {
+        const exists = liveAddresses.some((a) => a.id === current.id);
+        return exists ? current : liveAddresses[0];
+      });
+    }
+  }, [liveAddresses]);
 
   const getCartKey = () => user ? `nutriflow_cart_${user.id}` : `nutriflow_cart_guest`;
 
@@ -400,7 +442,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         totalFat,
         isCartOpen,
         setIsCartOpen,
-        addresses: DEFAULT_ADDRESSES,
+        addresses,
         selectedAddress,
         setSelectedAddress,
         deliveryEstimate,

@@ -4,7 +4,7 @@ import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { useCart } from "@/hooks/use-cart";
+import { useCart, useSwiggyAddresses } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -47,6 +47,9 @@ export default function Checkout() {
     totalAmount,
     clearCart,
   } = useCart();
+
+  const { data: liveAddresses, isLoading: isLoadingAddresses } = useSwiggyAddresses();
+  const activeAddresses = liveAddresses || addresses;
 
   const [isPlacing, setIsPlacing] = useState(false);
   const [couponCode, setCouponCode] = useState("WELLNESS10");
@@ -146,15 +149,20 @@ export default function Checkout() {
             {/* Delivery Address Section */}
             <Card className="border border-border/80 rounded-3xl overflow-hidden shadow-2xs">
               <CardHeader className="bg-muted/15 pb-4 border-b border-border/40">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5 text-emerald-600" />
-                  <CardTitle className="text-base font-bold">Delivery Address</CardTitle>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-5 w-5 text-emerald-600" />
+                    <CardTitle className="text-base font-bold">Delivery Address</CardTitle>
+                  </div>
+                  <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
+                    ⚡ Powered by Swiggy
+                  </span>
                 </div>
                 <CardDescription className="text-xs">Choose where you'd like your wellness order delivered.</CardDescription>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                  {addresses.map((addr) => {
+                  {activeAddresses.map((addr) => {
                     const isSelected = selectedAddress.id === addr.id;
                     const emoji = addr.icon === "Home" ? "🏠" : addr.icon === "Briefcase" ? "💼" : "📍";
                     return (
@@ -172,11 +180,16 @@ export default function Checkout() {
                           <span className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1">
                             <span>{emoji}</span> {addr.label}
                           </span>
-                          {isSelected && (
-                            <span className="h-4 w-4 rounded-full bg-emerald-600 flex items-center justify-center text-white shrink-0">
-                              <CheckCircle className="h-3 w-3" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">
+                              Swiggy Verified
                             </span>
-                          )}
+                            {isSelected && (
+                              <span className="h-4 w-4 rounded-full bg-emerald-600 flex items-center justify-center text-white shrink-0">
+                                <CheckCircle className="h-3 w-3" />
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <p className="text-xs text-muted-foreground leading-relaxed">{addr.address}</p>
                       </div>

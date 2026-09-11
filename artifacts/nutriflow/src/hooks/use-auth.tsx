@@ -43,6 +43,7 @@ export interface OnboardingData {
 interface AuthContextType {
   user: User | null;
   supabaseUser: any | null;
+  session: any | null;
   onboarded: boolean;
   onboardingData: OnboardingData;
   loading: boolean;
@@ -133,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<any | null>(null);
+  const [session, setSession] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const lastProcessedUserRef = useRef<string | null>(null);
 
@@ -258,15 +260,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshUser = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      setSession(currentSession);
+      if (!currentSession) {
         setUser(null);
         setSupabaseUser(null);
         lastProcessedUserRef.current = null;
         return;
       }
 
-      const userId = session.user.id;
+      const userId = currentSession.user.id;
       const emailConfirmedBefore = supabaseUser?.email_confirmed_at;
       const emailConfirmedNow = session.user.email_confirmed_at;
 
@@ -308,6 +311,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log("[Auth] State change:", event, session?.user?.id);
 
       if (session) {
+        setSession(session);
         const userId = session.user.id;
         setSupabaseUser(session.user);
         
@@ -328,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("[Auth] onAuthStateChange profile error:", err);
         }
       } else {
+        setSession(null);
         lastProcessedUserRef.current = null;
         setSupabaseUser(null);
         setUser(null);
@@ -399,6 +404,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setUser(null);
     setSupabaseUser(null);
+    setSession(null);
 
     // Clear all user-specific and fallback localStorage data
     if (userId) {
@@ -554,6 +560,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         supabaseUser,
+        session,
         onboarded,
         onboardingData,
         loading,
