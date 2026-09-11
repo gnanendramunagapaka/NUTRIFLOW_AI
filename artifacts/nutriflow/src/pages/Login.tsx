@@ -174,7 +174,17 @@ export default function Login() {
       if (provider === "google") {
         await loginWithGoogle();
       } else if (provider === "swiggy") {
-        // Connect Swiggy — session is handled inside connectSwiggyAccount()
+        // Pre-set local guest flags so the auth hook / route guards can react immediately
+        try {
+          localStorage.setItem("swiggy_mcp_connected", "true");
+          localStorage.setItem("nutriflow_guest_session", "true");
+          // dispatch same-tab event consumed by the auth provider
+          window.dispatchEvent(new Event("nutriflow-guest-session"));
+        } catch {
+          // ignore
+        }
+
+        // Connect Swiggy — connectSwiggyAccount will attempt anonymous Supabase sign-in
         await connectSwiggyAccount();
         toast({
           title: "Swiggy Connected! ⚡",

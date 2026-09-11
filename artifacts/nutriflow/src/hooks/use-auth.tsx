@@ -168,6 +168,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   };
 
+  // Build a guest user when no Supabase session exists but a guest session flag is present
+  const buildGuestUser = (): User => {
+    const local = readLocalUser();
+    const localOnboarding = readLocalOnboarding();
+    return {
+      id: "guest",
+      name: local?.name || "Guest",
+      email: local?.email || "",
+      isEmailVerified: false,
+      onboardingCompleted: local?.onboardingCompleted ?? false,
+      goal: local?.goal || localOnboarding.goals?.[0] || "Stay Healthy",
+      dietaryPreferences: local?.dietaryPreferences || localOnboarding.dietaryPreferences || [],
+      allergies: local?.allergies || localOnboarding.allergies || [],
+      workoutFrequency: local?.workoutFrequency || localOnboarding.workoutFrequency || null,
+      waterIntake: local?.waterIntake || localOnboarding.waterIntake || null,
+      mealHabits: local?.mealHabits || localOnboarding.mealHabits || null,
+      budget: local?.budget || localOnboarding.budget || null,
+      wellnessScore: local?.wellnessScore || 72,
+      streak: local?.streak || 1,
+      avatarUrl: local?.avatarUrl || null,
+    };
+  };
+
   // Fetch or create profile from Supabase — with 4s timeout and fallback
   const fetchOrCreateProfile = async (session: any): Promise<User> => {
     const fallbackUser = buildFallbackUser(session);
@@ -262,6 +285,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const { data: { session: currentSession } } = await supabase.auth.getSession();
       setSession(currentSession);
+      // If there is no Supabase session but a local guest session exists, initialize guest user
+      const hasGuest = typeof window !== "undefined" && localStorage.getItem("nutriflow_guest_session") === "true";
+      if (!currentSession && hasGuest) {
+        setUser(buildGuestUser());
+        setSupabaseUser(null);
+        lastProcessedUserRef.current = null;
+        setLoading(false);
+        return;
+      }
+
       if (!currentSession) {
         setUser(null);
         setSupabaseUser(null);
@@ -303,7 +336,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }, 8000);
 
-    // Initial auth check
+    // Initial auth check — but first respond to any local guest session flag immediately
+    try {
+      const hasGuest = typeof window !== "undefined" && localStorage.getItem("nutriflow_guest_session") === "true";
+      if (hasGuest) {
+        setUser(buildGuestUser());
+        setSupabaseUser(null);
+        setLoading(false);
+      }
+    } catch {
+      // ignore
+    }
+
+    // Continue with normal refresh which will override guest if a real session exists
     refreshUser();
 
     // Listen to auth state changes
@@ -335,7 +380,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         lastProcessedUserRef.current = null;
         setSupabaseUser(null);
-        setUser(null);
+
+        // If a guest flag is present, rehydrate guest user instead of nulling out
+        const hasGuest = typeof window !== "undefined" && localStorage.getItem("nutriflow_guest_session") === "true";
+        if (hasGuest) {
+          setUser(buildGuestUser());
+        } else {
+          setUser(null);
+        }
         try {
           queryClient.clear();
         } catch {
@@ -346,9 +398,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
+    // Listen for same-tab events when guest session is toggled (connectSwiggyAccount sets localStorage)
+    const onGuestEvent = () => {
+      try {
+        const hasGuest = localStorage.getItem("nutriflow_guest_session") === "true";
+        if (hasGuest) {
+          setUser(buildGuestUser());
+          setSupabaseUser(null);
+          setLoading(false);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("nutriflow-guest-session", onGuestEvent);
+    // Also respond to storage events (other tabs)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "nutriflow_guest_session") onGuestEvent();
+    };
+    window.addEventListener("storage", onStorage);
+
     return () => {
       clearTimeout(safetyTimer);
       subscription.unsubscribe();
+      window.removeEventListener("nutriflow-guest-session", onGuestEvent);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 

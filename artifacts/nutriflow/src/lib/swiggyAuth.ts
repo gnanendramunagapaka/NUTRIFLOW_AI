@@ -2,20 +2,23 @@ import { supabase } from "./supabaseClient";
 
 export async function connectSwiggyAccount(): Promise<boolean> {
   try {
+    // Persist local flags immediately so hooks/guards can react synchronously
     localStorage.setItem("swiggy_mcp_connected", "true");
-    
-    // Check if an active session exists
-    let { data: { session } } = await supabase.auth.getSession();
+    localStorage.setItem("nutriflow_guest_session", "true");
 
-    // If unauthenticated, sign in anonymously or create a guest session
-    if (!session) {
+    // Attempt Supabase anonymous sign in if no session exists
+    const { data: { session: existingSession } } = await supabase.auth.getSession();
+
+    if (!existingSession) {
       const { data, error } = await supabase.auth.signInAnonymously();
-      if (!error && data.session) {
-        session = data.session;
+      if (error) {
+        console.warn("Supabase anonymous auth disabled/failed. Operating on local guest session:", error.message);
+      } else if (data?.session) {
+        await supabase.auth.updateUser({
+          data: { swiggy_connected: true, swiggy_linked_at: new Date().toISOString() }
+        });
       }
-    }
-
-    if (session) {
+    } else {
       await supabase.auth.updateUser({
         data: { swiggy_connected: true, swiggy_linked_at: new Date().toISOString() }
       });
@@ -23,9 +26,10 @@ export async function connectSwiggyAccount(): Promise<boolean> {
 
     return true;
   } catch (err) {
-    console.error("Failed to connect Swiggy account:", err);
-    // Still allow local fallback so user isn't blocked
+    console.error("Swiggy connection error:", err);
+    // Ensure local fallback is set so the app can continue as guest
     localStorage.setItem("swiggy_mcp_connected", "true");
+    localStorage.setItem("nutriflow_guest_session", "true");
     return true;
   }
 }
