@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middlewares/authMiddleware";
 
 const router = Router();
@@ -7,8 +7,8 @@ const router = Router();
 // server-side exchange of authorization code -> access token. This lets the
 // server keep client secrets out of the browser and provide a tolerant
 // sandbox fallback for development preview environments.
-router.post("/swiggy/mcp/token", async (req, res) => {
-  const { code, redirect_uri } = req.body || {};
+router.post("/swiggy/mcp/token", async (req: Request, res: Response) => {
+  const { code, redirect_uri } = (req.body || {}) as { code?: string; redirect_uri?: string };
 
   if (!code) {
     return res.status(400).json({ error: "Missing authorization code" });
