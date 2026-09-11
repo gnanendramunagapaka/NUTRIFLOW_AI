@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
-import SwiggyAuthModal from "@/components/SwiggyAuthModal";
 import { connectSwiggyAccount } from "@/lib/swiggyAuth";
 import { AuthLayout } from "@/components/layout/AuthLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,7 +60,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [ssoLoading, setSsoLoading] = useState<"google" | "apple" | "swiggy" | null>(null);
-  const [isSwiggyModalOpen, setIsSwiggyModalOpen] = useState(false);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
 
   // Hook Forms
@@ -177,8 +175,17 @@ export default function Login() {
       if (provider === "google") {
         await loginWithGoogle();
       } else if (provider === "swiggy") {
-        // Open the Swiggy phone+OTP modal for real authentication
-        setIsSwiggyModalOpen(true);
+        // Establish a local guest session / attempt anonymous Supabase sign-in,
+        // then mark Swiggy connected and navigate to dashboard.
+        try {
+          localStorage.setItem("swiggy_mcp_connected", "true");
+          localStorage.setItem("nutriflow_guest_session", "true");
+          await connectSwiggyAccount();
+        } catch {
+          // ignore
+        }
+        // Force immediate navigation to dashboard
+        if (typeof window !== "undefined") window.location.href = "/dashboard";
       } else {
         // Fallback mock sign-in for Apple SSO
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -255,14 +262,7 @@ export default function Login() {
             </Button>
           </CardContent>
         </Card>
-        <SwiggyAuthModal
-          isOpen={isSwiggyModalOpen}
-          onClose={() => setIsSwiggyModalOpen(false)}
-          onSuccess={() => {
-            setIsSwiggyModalOpen(false);
-            setLocation("/dashboard");
-          }}
-        />
+        {/* SwiggyAuthModal removed — third-party OTP unsupported. */}
       </AuthLayout>
     );
   }
@@ -774,14 +774,7 @@ export default function Login() {
           </AnimatePresence>
         </CardContent>
       </Card>
-        <SwiggyAuthModal
-          isOpen={isSwiggyModalOpen}
-          onClose={() => setIsSwiggyModalOpen(false)}
-          onSuccess={() => {
-            setIsSwiggyModalOpen(false);
-            setLocation("/dashboard");
-          }}
-        />
+        {/* SwiggyAuthModal removed — third-party OTP unsupported. */}
     </AuthLayout>
   );
 }

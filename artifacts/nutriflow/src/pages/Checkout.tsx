@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useCart, useSwiggyAddresses } from "@/hooks/use-cart";
-import SwiggyAuthModal from "@/components/SwiggyAuthModal";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { 
@@ -56,7 +55,7 @@ export default function Checkout() {
 
   const [swiggyConnected, setSwiggyConnected] = useState(() => isSwiggyConnected());
   const [isConnectingSwiggy, setIsConnectingSwiggy] = useState(false);
-  const [isSwiggyModalOpen, setIsSwiggyModalOpen] = useState(false);
+  // No OTP modal — Swiggy connection is handled via `connectSwiggyAccount`
 
   const handleConnectSwiggy = async () => {
     setIsConnectingSwiggy(true);
@@ -161,21 +160,15 @@ export default function Checkout() {
               <p className="text-xs text-muted-foreground">Fast, contactless, hyper-local delivery from healthy certified kitchen partners.</p>
             </div>
           </div>
-          {swiggyConnected ? (
+            {swiggyConnected ? (
             <span className="text-[10px] font-extrabold text-emerald-700 dark:text-emerald-400 bg-emerald-100/60 dark:bg-emerald-950/40 px-3 py-1.5 rounded-full uppercase tracking-wider self-start sm:self-auto border border-emerald-200/60 flex items-center gap-1.5">
               <CheckCircle className="h-3.5 w-3.5 text-emerald-600" />
               <span>Swiggy Linked</span>
             </span>
           ) : (
-            <Button
-              size="sm"
-              onClick={() => setIsSwiggyModalOpen(true)}
-              disabled={isConnectingSwiggy}
-              className="bg-[#FC8019] hover:bg-[#E26E10] text-white text-xs font-bold rounded-xl px-4 h-8 shrink-0 shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover-elevate self-start sm:self-auto"
-            >
-              <span>⚡</span>
-              <span>Connect Swiggy</span>
-            </Button>
+            <span className="text-[10px] font-extrabold text-orange-700 bg-orange-100 px-3 py-1.5 rounded-full uppercase tracking-wider self-start sm:self-auto border border-orange-200/60 flex items-center gap-1.5">
+              ⚡ Swiggy MCP Sandbox Active
+            </span>
           )}
         </div>
 
