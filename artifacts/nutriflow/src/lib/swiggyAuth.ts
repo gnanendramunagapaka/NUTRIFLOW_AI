@@ -37,3 +37,15 @@ export async function connectSwiggyAccount(): Promise<boolean> {
 export function isSwiggyConnected(): boolean {
   return localStorage.getItem("swiggy_mcp_connected") === "true";
 }
+
+export function initiateSwiggyOAuth() {
+  const clientId = (import.meta.env.VITE_SWIGGY_CLIENT_ID as string) || "nutriflow-ai";
+  const redirectUri = (import.meta.env.VITE_SWIGGY_REDIRECT_URI as string) || "https://nutriflow-ai.vercel.app/auth/callback";
+  const mcpGateway = (import.meta.env.VITE_SWIGGY_MCP_GATEWAY_URL as string) || "https://mcp.swiggy.com/food";
+
+  const authUrl = `${mcpGateway}/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=delivery_address%20restaurant_search`;
+
+  if (typeof window !== "undefined") {
+    window.location.href = authUrl;
+  }
+}
