@@ -1,343 +1,1089 @@
+
 <div align="center">
 
 # 🥗 NutriFlow AI
 
-### AI-Powered Personalized Wellness & Nutrition Platform
+### AI-Powered Wellness & Food Commerce Copilot
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Supabase](https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+<p>
+  <strong>Eat smarter. Shop smarter. Live healthier.</strong>
+</p>
 
-**A production-grade, multi-user AI wellness application — built for portfolio showcase, product demos, and real-world deployment.**
+<p>
+  NutriFlow AI combines personalized nutrition intelligence,
+  conversational AI, grocery planning, and Swiggy-powered
+  food commerce into one unified experience.
+</p>
 
-[Features](#-features) · [Architecture](#-architecture) · [Setup](#-getting-started) · [Database Schema](#-database-schema) · [Screenshots](#-screenshots)
+<br/>
 
----
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=for-the-badge&logo=vite&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Data%20API%20%2B%20Auth-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-Live%20AI-F55036?style=for-the-badge)
+![Swiggy MCP](https://img.shields.io/badge/Swiggy-MCP-orange?style=for-the-badge)
+![Tailwind](https://img.shields.io/badge/Tailwind%20CSS-v4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
+
+<br/>
+
+### ⚡ AI • Nutrition • Food • Grocery • Dining • MCP
 
 </div>
 
-## ✨ Features
+---
 
-### 🤖 AI Co-Pilot (Gemini 2.0 Flash)
-- **Streaming AI chat** — real-time conversational meal planning powered by Google Gemini
-- **Structured JSON responses** — AI outputs rich meal cards with calories, protein, health scores
-- **Grocery list generation** — AI builds personalized shopping lists from your wellness goals
-- **Contextual recommendations** — every suggestion adapts to your dietary profile and allergies
+# 🌟 What is NutriFlow AI?
 
-### 🍽️ Intelligent Dashboard
-- **Personalized meal feed** — Swiggy-style card UI with heart-save and cart-add interactions
-- **Wellness score & streak tracker** — Apple Health-inspired progress rings
-- **Calorie & macro dashboard** — daily intake tracking with visual progress bars
-- **AI wellness insights** — contextual tips based on your onboarding profile
+**NutriFlow AI** is a personalized wellness platform built around an AI-powered commerce copilot.
 
-### 🛒 Full Cart & Checkout
-- **Persistent cart** — localStorage primary + Supabase background sync
-- **Nutrition summary** — real-time macros (calories, protein, carbs, fat) across cart items
-- **Mock Swiggy delivery flow** — order confirmation, delivery tracker animation, Swiggy partner branding
-- **Address selection** — multi-address checkout UI
+Instead of making users manually switch between nutrition apps, food delivery, grocery shopping, and restaurant discovery, NutriFlow connects these experiences through a single conversational interface.
 
-### 👤 Multi-User Auth & Onboarding
-- **Supabase Auth** — email/password signup, login, logout with persistent sessions
-- **7-step onboarding wizard** — goals, dietary preferences, allergies, lifestyle metrics, budget
-- **Auto profile creation** — new users get a DB profile row on first login
-- **localStorage-first persistence** — instant UI, non-blocking background DB sync
+The user describes an **outcome**.
 
-### 🥦 Grocery Planner
-- **AI-generated grocery plans** — personalized weekly shopping lists
-- **Category grouping** — Vegetables, Proteins, Grains, etc.
-- **Order via Instamart** — mock Swiggy Instamart checkout integration
+The AI understands the intent, constraints, nutrition requirements, budget, and preferences, then determines which service should handle the task.
 
-### 🔍 Discover Page
-- **Browse healthy meals** — filterable by cuisine, dietary tags, calorie range
-- **Save to wishlist** — per-user saved meals persisted in Supabase
-- **Quick add to cart** — one-click ordering with nutrition preview
+```text
+                         👤 USER
+                           │
+                           ▼
+                    🧠 AI COPILOT
+                           │
+                           ▼
+                 🎯 DECISION ENGINE
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+        🍽️ FOOD       🛒 INSTAMART    🍴 DINEOUT
+             │             │             │
+             └─────────────┼─────────────┘
+                           ▼
+                    ⚙️ OPTIMIZATION
+                           │
+                           ▼
+                    👀 USER REVIEW
+                           │
+                           ▼
+                  ✋ CONFIRMATION
+                           │
+                           ▼
+                       ⚡ ACTION
+````
 
 ---
 
-## 🏗️ Architecture
+# 🚀 Why NutriFlow?
 
+Traditional wellness applications usually stop at:
+
+> "Here is what you should eat."
+
+NutriFlow aims to continue the workflow:
+
+> "Here is what you should eat, where to get it, what it costs, and what I can do next."
+
+### Example
+
+```text
+"I want a high-protein dinner under ₹500."
+
+              ↓
+
+       🧠 AI understands
+
+              ↓
+
+       🎯 Applies constraints
+
+              ↓
+
+      🍽️ Search Food options
+
+              ↓
+
+      📊 Compare nutrition
+
+              ↓
+
+       💰 Check budget
+
+              ↓
+
+       👀 Show options
+
+              ↓
+
+      ✋ Ask for confirmation
+
+              ↓
+
+          ⚡ Execute
 ```
-SWIGGY_G/Asset-Manager/
+
+---
+
+# ✨ Features
+
+## 🤖 AI Wellness Copilot
+
+* Conversational AI assistance
+* Streaming AI responses
+* Nutrition-aware recommendations
+* Personalized meal suggestions
+* Goal-aware responses
+* Dietary preference awareness
+* Allergy-aware recommendations
+* AI-generated grocery plans
+* Model fallback architecture
+* Tool-oriented AI workflows
+
+---
+
+## 📊 Personalized Wellness Dashboard
+
+* Personalized user profile
+* Wellness score
+* Calorie tracking
+* Macro tracking
+* Progress visualization
+* Streak tracking
+* Personalized wellness insights
+* Goal-based recommendations
+
+---
+
+## 🍽️ Smart Food Discovery
+
+* Browse meals
+* Cuisine filtering
+* Dietary filtering
+* Calorie-aware discovery
+* Protein-aware recommendations
+* Health scoring
+* Save meals
+* Add meals to cart
+* Nutrition preview
+
+---
+
+## 🛒 AI Grocery Planner
+
+Transform a requirement into a structured shopping plan.
+
+```text
+User Requirement
+      ↓
+AI Planning
+      ↓
+Ingredient Extraction
+      ↓
+Category Grouping
+      ↓
+Nutrition Context
+      ↓
+Shopping Workflow
+```
+
+Features include:
+
+* AI-generated grocery plans
+* Weekly planning
+* Category grouping
+* Ingredient organization
+* Nutrition notes
+* Cart integration
+* Instamart workflow
+
+---
+
+# 🛍️ Swiggy MCP Integration
+
+NutriFlow integrates with the **Swiggy MCP ecosystem** to connect AI-driven intent with food commerce workflows.
+
+### Integrated Services
+
+| Service                 | Capability                      |
+| ----------------------- | ------------------------------- |
+| 🍽️ **Swiggy Food**     | Food and restaurant discovery   |
+| 🛒 **Swiggy Instamart** | Grocery/product discovery       |
+| 🍴 **Swiggy Dineout**   | Restaurant and dining workflows |
+
+---
+
+# 🧠 AI Commerce Copilot
+
+The core concept is:
+
+```text
+                 USER INTENT
+                     │
+                     ▼
+              🧠 AI COPILOT
+                     │
+                     ▼
+            INTENT UNDERSTANDING
+                     │
+                     ▼
+             🎯 SERVICE ROUTER
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+      FOOD        INSTAMART     DINEOUT
+        │            │            │
+        └────────────┼────────────┘
+                     ▼
+                 OPTIMIZE
+                     │
+                     ▼
+               USER REVIEW
+                     │
+                     ▼
+              CONFIRM ACTION
+                     │
+                     ▼
+                  EXECUTE
+```
+
+This architecture allows NutriFlow to treat Swiggy services as **tools available to the AI**, rather than separate application screens.
+
+---
+
+# 🧩 Example AI Workflows
+
+## 🍝 Recipe → Smart Cart
+
+```text
+"I want to make high-protein chicken pasta."
+
+                ↓
+
+          🧠 AI understands
+
+                ↓
+
+          🍝 Recipe planning
+
+                ↓
+
+        🧾 Ingredient extraction
+
+                ↓
+
+       🛒 Instamart product search
+
+                ↓
+
+        🔄 Product substitutions
+
+                ↓
+
+          💰 Cost calculation
+
+                ↓
+
+          📊 Nutrition analysis
+
+                ↓
+
+          👀 Review cart
+
+                ↓
+
+          ✋ Confirmation
+
+                ↓
+
+             ⚡ Execute
+```
+
+---
+
+## 🍽️ Food Recommendation
+
+```text
+"Find me a healthy dinner under ₹400."
+
+              ↓
+
+       Understand constraints
+
+              ↓
+
+        Search restaurants
+
+              ↓
+
+       Filter available meals
+
+              ↓
+
+     Nutrition + budget analysis
+
+              ↓
+
+          Show options
+
+              ↓
+
+       User chooses / confirms
+
+              ↓
+
+             Action
+```
+
+---
+
+## 🍴 Dineout
+
+```text
+"Find a good restaurant for
+4 people within our budget."
+
+              ↓
+
+        Group requirements
+
+              ↓
+
+       Restaurant discovery
+
+              ↓
+
+       Budget consideration
+
+              ↓
+
+        Offers / options
+
+              ↓
+
+          User review
+
+              ↓
+
+        Confirmation
+
+              ↓
+
+            Action
+```
+
+---
+
+# 🏗️ Architecture
+
+```mermaid
+flowchart TB
+
+    USER["👤 User"]
+
+    subgraph FRONTEND["Frontend"]
+        UI["React 19 + Vite"]
+        AUTH["Supabase Auth"]
+        DASH["Dashboard"]
+        CHAT["AI Chat"]
+        DISCOVER["Discover"]
+        CART["Cart / Checkout"]
+        GROCERY["Grocery Planner"]
+    end
+
+    subgraph BACKEND["NutriFlow API"]
+        API["Node.js + TypeScript"]
+        AI["AI Service"]
+        ROUTER["Decision Engine"]
+        DB["DbService"]
+        MCP["Swiggy MCP Manager"]
+        OAUTH["Swiggy OAuth Service"]
+    end
+
+    subgraph SUPABASE["Supabase"]
+        DATA["Supabase Data API"]
+        DATABASE[("PostgreSQL")]
+        CONNECTIONS[("Swiggy Connections")]
+    end
+
+    subgraph EXTERNAL["External Services"]
+        GROQ["Groq API"]
+        FOOD["Swiggy Food MCP"]
+        IM["Swiggy Instamart MCP"]
+        DINE["Swiggy Dineout MCP"]
+    end
+
+    USER --> UI
+
+    UI --> AUTH
+    UI --> API
+
+    API --> AI
+    API --> ROUTER
+    API --> DB
+    API --> MCP
+    API --> OAUTH
+
+    AI --> GROQ
+    DB --> DATA
+    DATA --> DATABASE
+    OAUTH --> CONNECTIONS
+
+    MCP --> FOOD
+    MCP --> IM
+    MCP --> DINE
+```
+
+---
+
+# 🔐 OAuth Architecture
+
+Swiggy connectivity uses an OAuth-based delegated authorization flow.
+
+```text
+             👤 User
+                │
+                ▼
+        NutriFlow Connect
+                │
+                ▼
+       OAuth Authorization
+                │
+                ▼
+       🔐 Swiggy Authorization
+                │
+                ▼
+            User Consent
+                │
+                ▼
+       Authorization Code
+                │
+                ▼
+        NutriFlow Callback
+                │
+                ▼
+       Server-side Exchange
+                │
+                ▼
+        🔑 Access Token
+                │
+                ▼
+       Secure Server Storage
+                │
+                ▼
+          MCP Connection
+```
+
+### OAuth protections
+
+* OAuth 2.1
+* PKCE with S256
+* Cryptographic state
+* Single-use state validation
+* Dynamic Client Registration
+* Server-side authorization code exchange
+* Server-side token storage
+* Token expiration handling
+
+---
+
+# 🛡️ Side-Effect Protection
+
+NutriFlow distinguishes between **read-only operations** and **actions that create external side effects**.
+
+### Read-only
+
+```text
+Search restaurant
+Search food
+Search grocery products
+View information
+Calculate nutrition
+```
+
+These can be processed without an execution confirmation.
+
+### Side-effecting
+
+```text
+Add item to cart
+Checkout
+Place order
+Create reservation
+Modify external state
+```
+
+These require explicit confirmation.
+
+```text
+              AI
+               │
+               ▼
+        Proposed Action
+               │
+               ▼
+       ┌───────────────┐
+       │ Confirmation? │
+       └───────┬───────┘
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+       NO            YES
+        │             │
+        ▼             ▼
+      STOP       User confirms
+                      │
+                      ▼
+                   EXECUTE
+```
+
+---
+
+# 🧰 Tech Stack
+
+| Layer                   | Technology           |
+| ----------------------- | -------------------- |
+| **Frontend**            | React 19             |
+| **Language**            | TypeScript           |
+| **Build Tool**          | Vite 7               |
+| **Styling**             | Tailwind CSS v4      |
+| **UI**                  | shadcn/ui + Radix UI |
+| **Animations**          | Framer Motion        |
+| **Routing**             | Wouter               |
+| **State / Server Data** | TanStack React Query |
+| **Authentication**      | Supabase Auth        |
+| **Database**            | Supabase PostgreSQL  |
+| **Database Access**     | Supabase Data API    |
+| **AI**                  | Groq API             |
+| **Backend**             | Node.js + TypeScript |
+| **Validation**          | Zod                  |
+| **Commerce Protocol**   | Swiggy MCP           |
+| **Authorization**       | OAuth 2.1 + PKCE     |
+| **Package Manager**     | pnpm                 |
+
+---
+
+# 📁 Project Structure
+
+```text
+NUTRIFLOW_AI/
+│
 ├── artifacts/
-│   ├── nutriflow/          ← React 19 + Vite frontend (main app)
-│   │   ├── src/
-│   │   │   ├── components/ ← UI components (Shadcn/ui + custom)
-│   │   │   │   ├── layout/ ← Navbar, Layout, AuthLayout, ProtectedRoute
-│   │   │   │   ├── cart/   ← CartDrawer, CartItem components
-│   │   │   │   └── ui/     ← Radix UI primitives
-│   │   │   ├── hooks/      ← use-auth.tsx, use-cart.tsx
-│   │   │   ├── lib/        ← supabaseClient.ts, utils.ts
-│   │   │   └── pages/      ← Dashboard, Chat, Discover, Grocery,
-│   │   │                      Onboarding, Login, Profile, Checkout
-│   │   └── vite.config.ts
-│   └── api-server/         ← Hono.js API server (Gemini AI proxy)
-│       └── src/routes/     ← /api/chat, /api/meals, /api/grocery
+│   │
+│   ├── nutriflow/
+│   │   └── src/
+│   │       ├── components/
+│   │       ├── hooks/
+│   │       ├── lib/
+│   │       └── pages/
+│   │
+│   ├── api-server/
+│   │   └── src/
+│   │       ├── lib/
+│   │       ├── mcp/
+│   │       ├── routes/
+│   │       ├── services/
+│   │       └── middlewares/
+│   │
+│   └── mockup-sandbox/
+│
 ├── lib/
-│   ├── api-client-react/   ← React Query hooks for API calls
-│   ├── api-spec/           ← OpenAPI 3.0 specification
-│   ├── api-zod/            ← Zod validation schemas
-│   └── db/                 ← Drizzle ORM schema definitions
-├── pnpm-workspace.yaml     ← Monorepo workspace config
-└── .env.example            ← Environment variable template
+│   ├── api-client-react/
+│   ├── api-spec/
+│   ├── api-zod/
+│   └── db/
+│
+├── specs/
+│   └── swiggy-mcp/
+│       ├── requirements.md
+│       ├── design.md
+│       ├── tasks.md
+│       └── tests.md
+│
+├── IMPLEMENTATION_CONTEXT.md
+├── package.json
+├── pnpm-workspace.yaml
+├── tsconfig.json
+└── .env.example
 ```
-
-### Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | React 19, TypeScript, Vite 7 |
-| **Routing** | Wouter (lightweight SPA router) |
-| **Styling** | Tailwind CSS v4, Framer Motion animations |
-| **UI Components** | Shadcn/ui (Radix UI primitives) |
-| **State/Data** | React Query (TanStack Query v5) |
-| **Auth & Database** | Supabase (PostgreSQL + Row Level Security) |
-| **AI Engine** | Google Gemini 2.0 Flash (streaming) |
-| **API Server** | Hono.js (Node.js) |
-| **Monorepo** | pnpm workspaces |
-| **Forms** | React Hook Form + Zod validation |
 
 ---
 
-## 🚀 Getting Started
+# 🚀 Quick Start
 
-### Prerequisites
-- Node.js ≥ 18
-- pnpm ≥ 9 (`npm install -g pnpm`)
-- A [Supabase](https://supabase.com) account (free tier works)
-- A [Google AI Studio](https://aistudio.google.com) API key (free)
+## Prerequisites
 
-### 1. Clone the repository
+Make sure you have:
+
+* Node.js 18+
+* pnpm 9+
+* Supabase project
+* Groq API key
+* Swiggy MCP access for commerce functionality
+
+---
+
+## 1️⃣ Clone
 
 ```bash
 git clone https://github.com/gnanendramunagapaka/NUTRIFLOW_AI.git
 cd NUTRIFLOW_AI
 ```
 
-### 2. Install dependencies
+---
+
+## 2️⃣ Install Dependencies
 
 ```bash
 pnpm install
 ```
 
-### 3. Configure environment variables
+---
+
+## 3️⃣ Configure Environment
+
+Copy the example configuration:
 
 ```bash
 cp .env.example .env.local
 ```
 
-Edit `.env.local` with your credentials:
+Then configure your local credentials.
+
+Example:
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
-GEMINI_API_KEY=your-gemini-api-key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-key
+
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SECRET_KEY=your-server-only-secret
+
+GROQ_API_KEY=your-groq-api-key
+
 PORT=5173
 BASE_PATH=/
+NODE_ENV=development
+
+SWIGGY_REGISTER_URL=https://mcp.swiggy.com/auth/register
+SWIGGY_AUTHORIZATION_URL=https://mcp.swiggy.com/auth/authorize
+SWIGGY_TOKEN_URL=https://mcp.swiggy.com/auth/token
+SWIGGY_REDIRECT_URI=https://your-domain/auth/callback/
+
+SWIGGY_FOOD_MCP_URL=https://mcp.swiggy.com/food
+SWIGGY_INSTAMART_MCP_URL=https://mcp.swiggy.com/im
+SWIGGY_DINEOUT_MCP_URL=https://mcp.swiggy.com/dineout
 ```
 
-### 4. Set up the Supabase database
+> ⚠️ Never commit `.env` or `.env.local`.
 
-Run the SQL schema in your Supabase SQL editor:
+---
 
-<details>
-<summary>📋 Click to expand full database schema</summary>
+# ▶️ Running NutriFlow
 
-```sql
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+Start the development environment using the workspace scripts:
 
--- User Profiles
-CREATE TABLE user_profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL DEFAULT '',
-  email TEXT NOT NULL DEFAULT '',
-  goal TEXT DEFAULT 'Stay Healthy',
-  dietary_preferences TEXT[] DEFAULT '{}',
-  allergies TEXT[] DEFAULT '{}',
-  workout_frequency TEXT,
-  water_intake TEXT,
-  meal_habits TEXT,
-  budget TEXT,
-  age INTEGER,
-  weight NUMERIC,
-  height NUMERIC,
-  onboarding_completed BOOLEAN DEFAULT false,
-  wellness_score INTEGER DEFAULT 72,
-  streak INTEGER DEFAULT 1,
-  avatar_url TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Cart Items
-CREATE TABLE cart_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  item_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  price NUMERIC NOT NULL DEFAULT 0,
-  quantity INTEGER NOT NULL DEFAULT 1,
-  type TEXT DEFAULT 'meal',
-  calories INTEGER,
-  protein NUMERIC,
-  image_url TEXT,
-  cuisine TEXT,
-  health_score INTEGER,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- AI Conversations
-CREATE TABLE ai_conversations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL DEFAULT 'New Chat',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- AI Messages
-CREATE TABLE ai_messages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  conversation_id UUID NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-  content TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Saved Meals
-CREATE TABLE saved_meals (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  meal_id TEXT NOT NULL,
-  name TEXT NOT NULL,
-  calories INTEGER,
-  protein NUMERIC,
-  image_url TEXT,
-  cuisine TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (user_id, meal_id)
-);
-
--- Grocery Plans
-CREATE TABLE grocery_plans (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL DEFAULT 'Weekly Plan',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Grocery Plan Items
-CREATE TABLE grocery_plan_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  plan_id UUID NOT NULL REFERENCES grocery_plans(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  category TEXT DEFAULT 'General',
-  quantity TEXT DEFAULT '1',
-  unit TEXT DEFAULT 'unit',
-  nutrition_note TEXT,
-  checked BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Row Level Security
-ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE cart_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ai_conversations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ai_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE saved_meals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE grocery_plans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE grocery_plan_items ENABLE ROW LEVEL SECURITY;
-
--- RLS Policies (users can only access their own data)
-CREATE POLICY "Users own their profile" ON user_profiles FOR ALL USING (auth.uid() = id);
-CREATE POLICY "Users own their cart" ON cart_items FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users own their conversations" ON ai_conversations FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users own their messages" ON ai_messages FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users own their saved meals" ON saved_meals FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users own their grocery plans" ON grocery_plans FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users own their grocery items" ON grocery_plan_items FOR ALL USING (auth.uid() = user_id);
-```
-
-</details>
-
-### 5. Start the development server
-
-**Terminal 1 — Frontend:**
 ```bash
-PORT=5173 BASE_PATH=/ npx pnpm --filter @workspace/nutriflow run dev
+pnpm run dev
 ```
 
-**Terminal 2 — API Server (for AI chat):**
+If you need to run individual workspaces:
+
 ```bash
-PORT=8080 GEMINI_API_KEY=your-key NEXT_PUBLIC_SUPABASE_URL=your-url NEXT_PUBLIC_SUPABASE_ANON_KEY=your-key npx pnpm --filter @workspace/api-server run start
+pnpm --filter @workspace/nutriflow run dev
 ```
 
-Open **http://localhost:5173** in your browser.
+and:
+
+```bash
+pnpm --filter @workspace/api-server run start
+```
+
+Open:
+
+```text
+http://localhost:5173
+```
 
 ---
 
-## 🗄️ Database Schema
+# 🗄️ Database
 
-The app uses **Supabase** (PostgreSQL) with **Row Level Security** — every user can only access their own data.
+NutriFlow uses **Supabase Authentication + Supabase Data API + PostgreSQL**.
 
-| Table | Purpose |
-|-------|---------|
-| `user_profiles` | Stores wellness goals, dietary preferences, body metrics |
-| `cart_items` | Per-user cart with meal/grocery items |
-| `ai_conversations` | Chat history grouped by conversation |
-| `ai_messages` | Individual chat messages (user + AI) |
-| `saved_meals` | Bookmarked meals from Discover page |
-| `grocery_plans` | AI-generated weekly grocery plans |
-| `grocery_plan_items` | Individual items within grocery plans |
+Core tables include:
 
----
-
-## 🔒 Security Notes
-
-- All `.env` files are excluded from git via `.gitignore`
-- Supabase API keys are loaded from environment variables only
-- Row Level Security (RLS) is enabled on all tables — users cannot access other users' data
-- The Supabase anon key is safe to expose to the browser (it's restricted by RLS)
-- Never commit your `GEMINI_API_KEY` or database connection strings
+| Table                    | Purpose                        |
+| ------------------------ | ------------------------------ |
+| `user_profiles`          | Personalized wellness profile  |
+| `wellness_tracking`      | Wellness tracking              |
+| `onboarding_preferences` | User preferences               |
+| `restaurants`            | Restaurant-related data        |
+| `meals`                  | Meal data                      |
+| `saved_meals`            | User saved meals               |
+| `cart_items`             | User cart                      |
+| `grocery_lists`          | Grocery lists                  |
+| `grocery_items`          | Grocery items                  |
+| `conversations`          | AI conversations               |
+| `messages`               | AI messages                    |
+| `swiggy_connections`     | Server-side Swiggy connections |
 
 ---
 
-## 📱 Screenshots
+# 👤 Multi-User Data Isolation
 
-> Signup → 7-step onboarding → personalized AI dashboard → streaming AI chat → cart → checkout
+User-specific operations follow this model:
 
-The app features:
-- 🌙 Dark/light mode with smooth transitions
-- 📱 Fully responsive mobile-first design
-- ✨ Framer Motion animations throughout
-- 🎨 Premium glassmorphism UI with emerald & primary color palette
+```text
+Supabase Auth
+      │
+      ▼
+Authenticated Session
+      │
+      ▼
+authMiddleware
+      │
+      ▼
+Authenticated user_id
+      │
+      ▼
+DbService
+      │
+      ▼
+User-scoped query
+      │
+      ▼
+Supabase Data API
+```
+
+NutriFlow does not rely on a shared application-level user context for authorization.
+
+User-owned database operations are explicitly scoped to the authenticated user.
 
 ---
 
-## 🤝 Contributing
+# 🔒 Security
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit your changes: `git commit -m "feat: add my feature"`
-4. Push to the branch: `git push origin feature/my-feature`
-5. Open a Pull Request
+Security is built into the architecture.
+
+## Browser
+
+The browser may contain:
+
+```text
+✓ Supabase public anon key
+✓ User authentication session
+✓ UI state
+```
+
+The browser must never contain:
+
+```text
+✗ Supabase server secret
+✗ Groq API key
+✗ Swiggy access token
+✗ OAuth authorization code
+✗ OAuth PKCE verifier
+✗ Database passwords
+```
 
 ---
 
-## 📄 License
+## Server
 
-MIT License — see [LICENSE](LICENSE) for details.
+Server-side credentials are kept in environment variables and are never intentionally returned to the client.
+
+```text
+Browser
+   │
+   │ HTTPS
+   ▼
+API Server
+   │
+   ├── Groq API
+   │
+   ├── Supabase Data API
+   │
+   └── Swiggy MCP
+```
+
+---
+
+# 🧪 Verification
+
+NutriFlow includes automated verification for major infrastructure components.
+
+### Verified
+
+* ✅ Supabase Data API connectivity
+* ✅ Real database reads/writes
+* ✅ Multi-user isolation
+* ✅ Authentication middleware
+* ✅ OAuth state validation
+* ✅ PKCE S256
+* ✅ Dynamic Client Registration
+* ✅ Swiggy MCP protocol handling
+* ✅ MCP initialization
+* ✅ MCP tool discovery
+* ✅ Side-effect confirmation gate
+* ✅ Token expiration handling
+* ✅ Live Groq inference
+* ✅ Groq fallback models
+* ✅ TypeScript validation
+* ✅ Production build
+
+Run:
+
+```bash
+pnpm run typecheck
+```
+
+Then:
+
+```bash
+pnpm run build
+```
+
+---
+
+# 📊 Reliability Architecture
+
+NutriFlow's AI layer supports model fallback.
+
+```text
+             AI Request
+                 │
+                 ▼
+          Primary Groq Model
+                 │
+          ┌──────┴──────┐
+          │             │
+       Success        Failure
+          │             │
+          ▼             ▼
+       Response      Fallback
+                        │
+                        ▼
+                 Secondary Model
+                        │
+                  ┌─────┴─────┐
+                  │           │
+               Success      Failure
+                  │           │
+                  ▼           ▼
+               Response    Next Model
+```
+
+This prevents a temporary provider/model failure from unnecessarily breaking the application.
+
+---
+
+# 🧪 Development Philosophy
+
+NutriFlow follows a specification-driven development approach for major integrations.
+
+```text
+Requirements
+     ↓
+Design
+     ↓
+Tasks
+     ↓
+Implementation
+     ↓
+Tests
+     ↓
+Verification
+```
+
+Swiggy integration specifications are maintained under:
+
+```text
+specs/swiggy-mcp/
+```
+
+---
+
+# 🛣️ Roadmap
+
+## ✅ Completed
+
+* [x] Supabase authentication
+* [x] Personalized onboarding
+* [x] Wellness dashboard
+* [x] AI assistant
+* [x] Meal discovery
+* [x] Saved meals
+* [x] Persistent cart
+* [x] Grocery planning
+* [x] Supabase Data API migration
+* [x] Multi-user isolation
+* [x] Swiggy OAuth architecture
+* [x] OAuth 2.1
+* [x] PKCE S256
+* [x] Dynamic Client Registration
+* [x] Swiggy MCP manager
+* [x] Food MCP integration
+* [x] Instamart MCP integration
+* [x] Dineout MCP integration
+* [x] Side-effect confirmation gate
+* [x] Live Groq integration
+* [x] AI fallback architecture
+* [x] Security verification
+* [x] Build and typecheck verification
+
+## 🔄 Remaining
+
+* [ ] Complete real Swiggy user OAuth consent flow
+* [ ] Full live Food MCP workflow with an authorized account
+* [ ] Full live Instamart workflow
+* [ ] Full live Dineout workflow
+* [ ] Production deployment hardening
+* [ ] Expanded observability
+* [ ] Analytics and monitoring
+
+---
+
+# 📸 Product Journey
+
+The intended experience:
+
+```text
+        SIGN UP
+           │
+           ▼
+      ONBOARDING
+           │
+           ▼
+       DASHBOARD
+           │
+           ▼
+        ASK AI
+           │
+           ▼
+    PERSONALIZED PLAN
+           │
+     ┌─────┼─────┐
+     ▼     ▼     ▼
+   FOOD  GROCERY DINEOUT
+     │     │       │
+     └─────┼───────┘
+           ▼
+         REVIEW
+           │
+           ▼
+       CONFIRM
+           │
+           ▼
+        EXECUTE
+```
+
+---
+
+# 🤝 Contributing
+
+### Create a feature branch
+
+```bash
+git checkout -b feature/my-feature
+```
+
+### Make your changes
+
+```bash
+git add .
+```
+
+### Commit
+
+```bash
+git commit -m "feat: add my feature"
+```
+
+### Push
+
+```bash
+git push origin feature/my-feature
+```
+
+Then open a Pull Request.
+
+---
+
+## 📝 Commit Convention
+
+Recommended:
+
+```text
+feat: add Instamart smart cart
+fix: handle expired Swiggy token
+refactor: improve MCP manager
+test: add OAuth state tests
+docs: update setup guide
+chore: update dependencies
+```
+
+---
+
+# ⚠️ Security Checklist
+
+Before pushing code:
+
+```text
+[ ] No .env files
+[ ] No API keys
+[ ] No OAuth tokens
+[ ] No passwords
+[ ] No authorization codes
+[ ] No database credentials
+[ ] No hardcoded provider secrets
+[ ] No credentials in console.log
+```
+
+Check:
+
+```bash
+git status
+```
+
+and make sure:
+
+```text
+.env
+.env.local
+```
+
+are ignored.
+
+---
+
+# 📄 License
+
+This project is licensed under the **MIT License**.
+
+See [`LICENSE`](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-Built with ❤️ by [Gnanendra Munagapaka](https://github.com/gnanendramunagapaka)
+# 🥗 NutriFlow AI
 
-**Stack:** React 19 · TypeScript · Vite · Supabase · Gemini AI · Tailwind CSS · Framer Motion
+### AI × Nutrition × Food Commerce
+
+**Eat smarter. Shop smarter. Live healthier.**
+
+<br/>
+
+Built with ❤️ by **Gnanendra Munagapaka** and contributors.
+
+<br/>
+
+⭐ **Star the repository if you like the project.**
+
+<br/>
+
+`React` · `TypeScript` · `Vite` · `Supabase` · `Groq` · `Swiggy MCP` · `OAuth 2.1`
 
 </div>
+```
+
+
+should appear.
