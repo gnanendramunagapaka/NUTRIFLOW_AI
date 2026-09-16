@@ -1,11 +1,10 @@
 import { Router, type IRouter } from "express";
-import { db, mealsTable, restaurantsTable, savedMealsTable } from "@workspace/db";
+import { DbService } from "../services/dbService";
 import {
   ListMealsQueryParams,
   GetMealParams,
   GetMealPlanResponse,
 } from "@workspace/api-zod";
-import { eq, ilike, or, sql, and } from "drizzle-orm";
 import { requireAuth } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
@@ -19,22 +18,7 @@ router.get("/meals", requireAuth, async (req, res): Promise<void> => {
 
   const { filter, search } = parsed.data;
 
-  let query = db.select().from(mealsTable).$dynamic();
-
-  if (filter) {
-    query = query.where(sql`${mealsTable.tags} @> ARRAY[${filter}]::text[]`);
-  }
-
-  if (search) {
-    query = query.where(
-      or(
-        ilike(mealsTable.name, `%${search}%`),
-        ilike(mealsTable.cuisine, `%${search}%`)
-      )
-    );
-  }
-
-  const meals = await query.limit(30);
+  const meals = await DbService.listMeals(filter, search, 30);
   res.json(meals.map(m => ({
     ...m,
     tags: m.tags ?? [],
@@ -48,7 +32,7 @@ router.get("/meals/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const [meal] = await db.select().from(mealsTable).where(eq(mealsTable.id, params.data.id));
+  const meal = await DbService.getMealById(params.data.id);
   if (!meal) {
     res.status(404).json({ error: "Meal not found" });
     return;
@@ -61,21 +45,19 @@ router.get("/meal-plan", requireAuth, async (req, res): Promise<void> => {
   const profile = req.user!;
   const goalLower = (profile.goal || "").toLowerCase();
 
-  let query = db.select().from(mealsTable).$dynamic();
-  
-  // Enforce personalization of meal plan recommendations based on onboarding choices
+  let targetTag: string | undefined;
   if (goalLower.includes("loss") || goalLower.includes("lose") || goalLower.includes("slim") || goalLower.includes("cut")) {
-    query = query.where(sql`${mealsTable.tags} @> ARRAY['low-carb']::text[]`);
+    targetTag = "low-carb";
   } else if (goalLower.includes("muscle") || goalLower.includes("gain") || goalLower.includes("bulk") || goalLower.includes("gym")) {
-    query = query.where(sql`${mealsTable.tags} @> ARRAY['high-protein']::text[]`);
+    targetTag = "high-protein";
   } else if (goalLower.includes("diabetic") || goalLower.includes("sugar")) {
-    query = query.where(sql`${mealsTable.tags} @> ARRAY['diabetic-friendly']::text[]`);
+    targetTag = "diabetic-friendly";
   }
 
-  let meals = await query.limit(21);
+  let meals = targetTag ? await DbService.getMealsByTag(targetTag, 21) : [];
 
   if (meals.length < 5) {
-    meals = await db.select().from(mealsTable).limit(21);
+    meals = await DbService.listMeals(undefined, undefined, 21);
   }
 
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -102,17 +84,14 @@ router.get("/meal-plan", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.get("/restaurants", requireAuth, async (_req, res): Promise<void> => {
-  const restaurants = await db.select().from(restaurantsTable).limit(20);
+  const restaurants = await DbService.listRestaurants(20);
   res.json(restaurants.map(r => ({ ...r, tags: r.tags ?? [] })));
 });
 
 // GET /meals/saved: Fetch all saved meals for this user
 router.get("/meals/saved", requireAuth, async (req, res): Promise<void> => {
   try {
-    const saved = await db
-      .select()
-      .from(savedMealsTable)
-      .where(eq(savedMealsTable.userId, req.user!.id));
+    const saved = await DbService.getSavedMeals(req.user!.id);
     res.json(saved);
   } catch (error) {
     console.error("[Saved Meals API] GET error:", error);
@@ -132,34 +111,26 @@ router.post("/meals/saved", requireAuth, async (req, res): Promise<void> => {
 
     // Check if already saved
     if (mealId) {
-      const [existing] = await db
-        .select()
-        .from(savedMealsTable)
-        .where(and(eq(savedMealsTable.userId, req.user!.id), eq(savedMealsTable.mealId, mealId)))
-        .limit(1);
-
+      const existing = await DbService.findSavedMeal(req.user!.id, mealId);
       if (existing) {
         res.json(existing);
         return;
       }
     }
 
-    const [saved] = await db
-      .insert(savedMealsTable)
-      .values({
-        userId: req.user!.id,
-        mealId: mealId || null,
-        name,
-        description,
-        imageUrl,
-        calories,
-        protein,
-        carbs,
-        fat,
-        healthScore,
-        price,
-      })
-      .returning();
+    const saved = await DbService.saveMeal({
+      userId: req.user!.id,
+      mealId: mealId || null,
+      name,
+      description,
+      imageUrl,
+      calories,
+      protein,
+      carbs,
+      fat,
+      healthScore,
+      price,
+    });
 
     res.status(201).json(saved);
   } catch (error) {
@@ -177,10 +148,7 @@ router.delete("/meals/saved/:id", requireAuth, async (req, res): Promise<void> =
       return;
     }
 
-    await db
-      .delete(savedMealsTable)
-      .where(and(eq(savedMealsTable.id, id), eq(savedMealsTable.userId, req.user!.id)));
-    
+    await DbService.deleteSavedMeal(id, req.user!.id);
     res.sendStatus(204);
   } catch (error) {
     console.error("[Saved Meals API] DELETE error:", error);

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, conversations, messages } from "@workspace/db";
+import { DbService } from "../services/dbService";
 import {
   CreateOpenaiConversationBody,
   GetOpenaiConversationParams,
@@ -10,8 +10,7 @@ import {
   GenerateOpenaiImageBody,
   GenerateOpenaiImageResponse,
 } from "@workspace/api-zod";
-import { eq, asc, and } from "drizzle-orm";
-import { getGeminiModel, getFallbackResponse } from "../lib/gemini";
+import { getGeminiModel, getFallbackResponse, generateGroqCompletion } from "../lib/gemini";
 
 import { requireAuth } from "../middlewares/authMiddleware";
 
@@ -65,9 +64,8 @@ function getPlainTextContent(content: string): string {
   return content;
 }
 
-
 router.get("/openai/conversations", requireAuth, async (req, res): Promise<void> => {
-  const convs = await db.select().from(conversations).where(eq(conversations.userId, req.user!.id));
+  const convs = await DbService.listConversations(req.user!.id);
   res.json(convs);
 });
 
@@ -78,7 +76,7 @@ router.post("/openai/conversations", requireAuth, async (req, res): Promise<void
     return;
   }
 
-  const [conv] = await db.insert(conversations).values({ title: parsed.data.title, userId: req.user!.id }).returning();
+  const conv = await DbService.createConversation(req.user!.id, parsed.data.title);
   res.status(201).json(conv);
 });
 
@@ -89,17 +87,13 @@ router.get("/openai/conversations/:id", requireAuth, async (req, res): Promise<v
     return;
   }
 
-  const [conv] = await db.select().from(conversations).where(
-    and(eq(conversations.id, params.data.id), eq(conversations.userId, req.user!.id))
-  );
+  const conv = await DbService.getConversationByIdAndUserId(params.data.id, req.user!.id);
   if (!conv) {
     res.status(404).json({ error: "Conversation not found" });
     return;
   }
 
-  const msgs = await db.select().from(messages)
-    .where(eq(messages.conversationId, params.data.id))
-    .orderBy(asc(messages.createdAt));
+  const msgs = await DbService.getMessagesByConversationId(params.data.id);
 
   res.json({ ...conv, messages: msgs });
 });
@@ -111,16 +105,13 @@ router.delete("/openai/conversations/:id", requireAuth, async (req, res): Promis
     return;
   }
 
-  const [conv] = await db.select().from(conversations).where(
-    and(eq(conversations.id, params.data.id), eq(conversations.userId, req.user!.id))
-  );
+  const conv = await DbService.getConversationByIdAndUserId(params.data.id, req.user!.id);
   if (!conv) {
     res.status(404).json({ error: "Conversation not found" });
     return;
   }
 
-  await db.delete(messages).where(eq(messages.conversationId, params.data.id));
-  await db.delete(conversations).where(eq(conversations.id, params.data.id));
+  await DbService.deleteConversationAndMessages(params.data.id, req.user!.id);
   res.sendStatus(204);
 });
 
@@ -131,18 +122,13 @@ router.get("/openai/conversations/:id/messages", requireAuth, async (req, res): 
     return;
   }
 
-  const [conv] = await db.select().from(conversations).where(
-    and(eq(conversations.id, params.data.id), eq(conversations.userId, req.user!.id))
-  );
+  const conv = await DbService.getConversationByIdAndUserId(params.data.id, req.user!.id);
   if (!conv) {
     res.status(404).json({ error: "Conversation not found" });
     return;
   }
 
-  const msgs = await db.select().from(messages)
-    .where(eq(messages.conversationId, params.data.id))
-    .orderBy(asc(messages.createdAt));
-
+  const msgs = await DbService.getMessagesByConversationId(params.data.id);
   res.json(msgs);
 });
 
@@ -171,16 +157,12 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
       parts: [{ text: m.role === "assistant" || m.role === "model" ? getPlainTextContent(m.content) : m.content }]
     }));
     
-    // Add current user message
     contents.push({
       role: "user" as const,
       parts: [{ text: userContent }]
     });
   } else {
-    // Legacy path: check conversation and load history from database
-    const [conv] = await db.select().from(conversations).where(
-      and(eq(conversations.id, params.data.id), eq(conversations.userId, req.user!.id))
-    );
+    const conv = await DbService.getConversationByIdAndUserId(params.data.id, req.user!.id);
     if (!conv) {
       res.status(404).json({ error: "Conversation not found" });
       return;
@@ -188,18 +170,9 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
 
     console.log(`[Chat] User message in conv ${params.data.id}: "${userContent.slice(0, 80)}..."`);
 
-    // Save user message first
-    await db.insert(messages).values({
-      conversationId: params.data.id,
-      role: "user",
-      content: userContent,
-    });
+    await DbService.createMessage(params.data.id, "user", userContent);
 
-    // Load conversation history (last 20 messages)
-    const history = await db.select().from(messages)
-      .where(eq(messages.conversationId, params.data.id))
-      .orderBy(asc(messages.createdAt))
-      .limit(20);
+    const history = await DbService.getMessagesByConversationId(params.data.id, 20);
 
     contents = history.map(m => ({
       role: m.role === "assistant" ? "model" as const : "user" as const,
@@ -207,7 +180,6 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
     }));
   }
 
-  // Set SSE headers BEFORE any streaming
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -216,20 +188,77 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
   let fullResponse = "";
   let usedFallback = false;
 
+  let systemPrompt = NUTRIFLOW_SYSTEM_PROMPT;
   try {
-    console.log(`[Chat] Calling Gemini API (gemini-2.0-flash-lite)...`);
-    const model = getGeminiModel(NUTRIFLOW_SYSTEM_PROMPT, false);
-    const resultStream = await model.generateContentStream({ contents });
+    const { SwiggyMcpManager } = await import("../mcp/swiggyMcpManager");
+    const mcpTools = await SwiggyMcpManager.discoverAllToolsForUser(req.user!.id);
+    if (mcpTools.length > 0) {
+      const toolDescriptions = mcpTools.map(t => `- ${t.serverType.toUpperCase()} Tool "${t.name}": ${t.description} (Schema: ${JSON.stringify(t.inputSchema)})`).join("\n");
+      systemPrompt += `\n\nSWIGGY MCP INTEGRATION ACTIVE:
+You have access to the user's connected Swiggy account with the following real MCP tools:
+${toolDescriptions}
 
-    for await (const chunk of resultStream.stream) {
-      const content = chunk.text();
-      if (content) {
-        fullResponse += content;
-        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+If the user's query requires searching food, restaurants, grocery items, or checking dining availability, include a "swiggyAction" object in your JSON output:
+"swiggyAction": {
+  "serverType": "food" | "instamart" | "dineout",
+  "toolName": string,
+  "arguments": object
+}`;
+    }
+  } catch (mcpErr) {
+    console.warn("[Chat] MCP tool discovery check failed (non-critical):", mcpErr);
+  }
+
+  try {
+    if (process.env.GROQ_API_KEY) {
+      console.log(`[Chat] Calling Groq API (llama-3.3-70b-versatile)...`);
+      const groqMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        { role: "system", content: systemPrompt },
+        ...contents.map((c: any) => ({
+          role: c.role === "model" ? ("assistant" as const) : ("user" as const),
+          content: c.parts[0]?.text || "",
+        })),
+      ];
+      fullResponse = await generateGroqCompletion(groqMessages, "llama-3.3-70b-versatile");
+      res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
+      console.log(`[Chat] Groq API responded successfully (${fullResponse.length} chars)`);
+    } else {
+      console.log(`[Chat] Calling Gemini API...`);
+      const model = getGeminiModel(systemPrompt, false);
+      const resultStream = await model.generateContentStream({ contents });
+
+      for await (const chunk of resultStream.stream) {
+        const content = chunk.text();
+        if (content) {
+          fullResponse += content;
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        }
       }
+
+      console.log(`[Chat] Gemini responded successfully (${fullResponse.length} chars)`);
     }
 
-    console.log(`[Chat] Gemini responded successfully (${fullResponse.length} chars)`);
+    try {
+      const parsedJson = JSON.parse(fullResponse);
+      if (parsedJson && parsedJson.swiggyAction) {
+        const { serverType, toolName, arguments: toolArgs } = parsedJson.swiggyAction;
+        const { SwiggyMcpManager, isSideEffectTool } = await import("../mcp/swiggyMcpManager");
+
+        if (isSideEffectTool(toolName)) {
+          res.write(`data: ${JSON.stringify({
+            swiggyConfirmationRequired: true,
+            swiggyAction: parsedJson.swiggyAction,
+            message: `User confirmation required before executing side-effect operation "${toolName}" on Swiggy ${serverType}.`
+          })}\n\n`);
+        } else {
+          const client = await SwiggyMcpManager.getClientForUser(req.user!.id, serverType);
+          const mcpResult = await client.callTool(toolName, toolArgs || {});
+          res.write(`data: ${JSON.stringify({ swiggyResult: mcpResult, serverType, toolName })}\n\n`);
+        }
+      }
+    } catch {
+      // Response was plain text or non-actionable JSON
+    }
 
   } catch (geminiError: any) {
     const isRateLimit = geminiError?.status === 429 || geminiError?.message?.includes("429") || geminiError?.message?.includes("quota");
@@ -245,27 +274,20 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
       console.error("[Chat] Unexpected Gemini error — using fallback response");
     }
 
-    // Use intelligent fallback — stream it in chunks like a real response
     usedFallback = true;
     fullResponse = getFallbackResponse(userContent);
 
-    // Stream fallback in small chunks to simulate real streaming UX
     const chunkSize = 30;
     for (let i = 0; i < fullResponse.length; i += chunkSize) {
       const content = fullResponse.slice(i, i + chunkSize);
       res.write(`data: ${JSON.stringify({ content, fallback: true })}\n\n`);
-      await new Promise(r => setTimeout(r, 20)); // small delay for streaming feel
+      await new Promise(r => setTimeout(r, 20));
     }
   }
 
-  // Save assistant message to DB
   try {
     if (!hasHistoryInBody) {
-      await db.insert(messages).values({
-        conversationId: params.data.id,
-        role: "assistant",
-        content: fullResponse,
-      });
+      await DbService.createMessage(params.data.id, "assistant", fullResponse);
       console.log(`[Chat] Saved assistant message to DB (fallback=${usedFallback})`);
     }
   } catch (dbError) {
@@ -276,7 +298,6 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
   res.end();
 });
 
-
 router.post("/openai/generate-image", requireAuth, async (req, res): Promise<void> => {
   const parsed = GenerateOpenaiImageBody.safeParse(req.body);
   if (!parsed.success) {
@@ -284,7 +305,6 @@ router.post("/openai/generate-image", requireAuth, async (req, res): Promise<voi
     return;
   }
 
-  // Return a mock green leaf theme SVG image base64, satisfying schema but fully local.
   const dummySvg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="1024" height="1024">
       <defs>

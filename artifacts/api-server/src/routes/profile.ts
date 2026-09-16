@@ -1,12 +1,11 @@
 import { Router, type IRouter } from "express";
-import { db, userProfilesTable, wellnessTrackingTable, mealsTable } from "@workspace/db";
+import { DbService } from "../services/dbService";
 import {
   UpdateProfileBody,
   GetProfileResponse,
   GetWellnessSummaryResponse,
 } from "@workspace/api-zod";
-import { eq, and } from "drizzle-orm";
-import { getGeminiModel } from "../lib/gemini";
+import { getGeminiModel, generateGroqCompletion } from "../lib/gemini";
 import { requireAuth } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
@@ -25,8 +24,6 @@ router.get("/profile", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
-import { onboardingPreferencesTable } from "@workspace/db";
-
 router.patch("/profile", requireAuth, async (req, res): Promise<void> => {
   try {
     const parsed = UpdateProfileBody.safeParse(req.body);
@@ -36,43 +33,19 @@ router.patch("/profile", requireAuth, async (req, res): Promise<void> => {
     }
 
     const profile = req.user!;
-    const [updated] = await db
-      .update(userProfilesTable)
-      .set(parsed.data)
-      .where(eq(userProfilesTable.id, profile.id))
-      .returning();
+    const updated = await DbService.updateUserProfile(profile.id, parsed.data);
 
-    // Sync onboardingPreferencesTable for user-scoped onboarding preferences persistence
+    // Sync onboardingPreferences Table for user-scoped onboarding preferences persistence
     try {
-      const [existingPref] = await db
-        .select()
-        .from(onboardingPreferencesTable)
-        .where(eq(onboardingPreferencesTable.userId, profile.id))
-        .limit(1);
-
-      const prefValues = {
+      await DbService.syncOnboardingPreferences(profile.id, {
         goal: updated.goal,
-        dietaryPreferences: updated.dietaryPreferences ?? [],
-        allergies: updated.allergies ?? [],
-        workoutFrequency: updated.workoutFrequency,
-        waterIntake: updated.waterIntake,
-        mealHabits: updated.mealHabits,
-        budget: updated.budget,
-      };
-
-      if (existingPref) {
-        await db
-          .update(onboardingPreferencesTable)
-          .set(prefValues)
-          .where(eq(onboardingPreferencesTable.id, existingPref.id));
-      } else {
-        await db
-          .insert(onboardingPreferencesTable)
-          .values({
-            userId: profile.id,
-            ...prefValues,
-          });
-      }
+        dietaryPreferences: updated.dietaryPreferences,
+        allergies: updated.allergies,
+        workoutFrequency: updated.workoutFrequency ?? undefined,
+        waterIntake: updated.waterIntake ?? undefined,
+        mealHabits: updated.mealHabits ?? undefined,
+        budget: updated.budget ?? undefined,
+      });
     } catch (syncError) {
       console.error("[Profile Sync] Failed to sync onboarding preferences table:", syncError);
     }
@@ -115,38 +88,31 @@ router.get("/wellness/summary", requireAuth, async (req, res): Promise<void> => 
 
     // Adjust based on weight if available
     if (profile.weight) {
-      // 2g protein per kg for active goals, 1.5g otherwise
       proteinGoal = Math.round(profile.weight * (goalLower.includes("muscle") ? 2.2 : 1.6));
-      waterGoal = Number((profile.weight * 0.04).toFixed(1)); // ~40ml per kg
+      waterGoal = Number((profile.weight * 0.04).toFixed(1));
     }
 
     const today = new Date().toISOString().split("T")[0];
-    const [tracking] = await db
-      .select()
-      .from(wellnessTrackingTable)
-      .where(and(
-        eq(wellnessTrackingTable.date, today),
-        eq(wellnessTrackingTable.userId, profile.id)
-      ))
-      .limit(1);
-
-    const topMeals = await db.select().from(mealsTable)
-      .where(eq(mealsTable.isAiRecommended, true))
-      .limit(3);
+    const tracking = await DbService.getWellnessTracking(profile.id, today);
+    const topMeals = await DbService.getTopRecommendedMeals(3);
 
     const aiPrompt = `Give a short, warm, encouraging wellness insight (1 sentence, max 15 words) for someone with ${profile.streak} day streak whose goal is "${profile.goal}". Be specific and positive.`;
 
     let aiInsight = "Great consistency! Keep up your healthy habits this week.";
     try {
-      const model = getGeminiModel("You generate short, inspiring wellness insights.");
-      const completion = await model.generateContent(aiPrompt);
-      aiInsight = completion.response.text().trim() || aiInsight;
+      if (process.env.GROQ_API_KEY) {
+        const text = await generateGroqCompletion([
+          { role: "system", content: "You generate short, inspiring wellness insights." },
+          { role: "user", content: aiPrompt }
+        ]);
+        aiInsight = text.trim() || aiInsight;
+      }
     } catch {
       // use default
     }
 
     const summary = GetWellnessSummaryResponse.parse({
-      proteinIntake: tracking?.proteinIntake ?? Math.round(proteinGoal * 0.6), // mock active intake based on target
+      proteinIntake: tracking?.proteinIntake ?? Math.round(proteinGoal * 0.6),
       proteinGoal,
       waterIntake: tracking?.waterIntake ?? Number((waterGoal * 0.65).toFixed(1)),
       waterGoal,

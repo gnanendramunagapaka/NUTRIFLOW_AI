@@ -1,51 +1,84 @@
 import { supabase } from "./supabaseClient";
 
-export async function connectSwiggyAccount(): Promise<boolean> {
+/**
+ * TASK-008: Initiates Swiggy OAuth 2.1 authorization by requesting authorization URL
+ * and PKCE challenge from the backend API server.
+ */
+export async function initiateSwiggyOAuth(): Promise<void> {
   try {
-    // Persist local flags immediately so hooks/guards can react synchronously
-    localStorage.setItem("swiggy_mcp_connected", "true");
-    localStorage.setItem("nutriflow_guest_session", "true");
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || "";
 
-    // Attempt Supabase anonymous sign in if no session exists
-    const { data: { session: existingSession } } = await supabase.auth.getSession();
+    const response = await fetch("/api/swiggy/auth/start", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
 
-    if (!existingSession) {
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) {
-        console.warn("Supabase anonymous auth disabled/failed. Operating on local guest session:", error.message);
-      } else if (data?.session) {
-        await supabase.auth.updateUser({
-          data: { swiggy_connected: true, swiggy_linked_at: new Date().toISOString() }
-        });
-      }
-    } else {
-      await supabase.auth.updateUser({
-        data: { swiggy_connected: true, swiggy_linked_at: new Date().toISOString() }
-      });
+    if (!response.ok) {
+      console.warn("Failed to retrieve Swiggy authorization URL from backend.");
+      return;
     }
 
-    return true;
+    const data = await response.json();
+    if (data?.authorizationUrl && typeof window !== "undefined") {
+      window.location.href = data.authorizationUrl;
+    }
   } catch (err) {
-    console.error("Swiggy connection error:", err);
-    // Ensure local fallback is set so the app can continue as guest
-    localStorage.setItem("swiggy_mcp_connected", "true");
-    localStorage.setItem("nutriflow_guest_session", "true");
-    return true;
+    console.error("[SwiggyAuth] initiateSwiggyOAuth failed:", err);
   }
 }
 
-export function isSwiggyConnected(): boolean {
-  return localStorage.getItem("swiggy_mcp_connected") === "true";
+/**
+ * Queries server-side connection status for the authenticated user.
+ */
+export async function fetchSwiggyConnectionStatus(): Promise<{ connected: boolean; status: string }> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return { connected: false, status: "DISCONNECTED" };
+
+    const response = await fetch("/api/swiggy/status", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    if (!response.ok) return { connected: false, status: "DISCONNECTED" };
+    return await response.json();
+  } catch {
+    return { connected: false, status: "DISCONNECTED" };
+  }
 }
 
-export function initiateSwiggyOAuth() {
-  const clientId = (import.meta.env.VITE_SWIGGY_CLIENT_ID as string) || "nutriflow-ai";
-  const redirectUri = (import.meta.env.VITE_SWIGGY_REDIRECT_URI as string) || "https://nutriflow-ai.vercel.app/auth/callback";
-  const mcpGateway = (import.meta.env.VITE_SWIGGY_MCP_GATEWAY_URL as string) || "https://mcp.swiggy.com/food";
+export const connectSwiggyAccount = initiateSwiggyOAuth;
 
-  const authUrl = `${mcpGateway}/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=delivery_address%20restaurant_search`;
+export async function isSwiggyConnected(): Promise<boolean> {
+  const status = await fetchSwiggyConnectionStatus();
+  return status.connected;
+}
 
-  if (typeof window !== "undefined") {
-    window.location.href = authUrl;
+/**
+ * TASK-040: Disconnects Swiggy account server-side.
+ */
+export async function disconnectSwiggyAccount(): Promise<boolean> {
+  try {
+    localStorage.removeItem("swiggy_access_token");
+    localStorage.removeItem("swiggy_mcp_connected");
+    
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+      await fetch("/api/swiggy/disconnect", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+    }
+    return true;
+  } catch (err) {
+    console.error("Disconnect error:", err);
+    return false;
   }
 }

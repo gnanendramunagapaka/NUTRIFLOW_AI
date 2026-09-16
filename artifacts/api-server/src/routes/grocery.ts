@@ -1,19 +1,16 @@
 import { Router, type IRouter } from "express";
-import { db, groceryListsTable, groceryItemsTable } from "@workspace/db";
+import { DbService } from "../services/dbService";
 import {
   CreateGroceryPlanBody,
   ToggleGroceryItemParams,
 } from "@workspace/api-zod";
-import { eq, desc, and } from "drizzle-orm";
-import { getGeminiModel } from "../lib/gemini";
+import { getGeminiModel, generateGroqCompletion } from "../lib/gemini";
 import { requireAuth } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
 router.get("/grocery/list", requireAuth, async (req, res): Promise<void> => {
-  const [list] = await db.select().from(groceryListsTable)
-    .where(eq(groceryListsTable.userId, req.user!.id))
-    .orderBy(desc(groceryListsTable.createdAt)).limit(1);
+  const list = await DbService.getLatestGroceryList(req.user!.id);
 
   if (!list) {
     res.json({
@@ -26,7 +23,7 @@ router.get("/grocery/list", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const items = await db.select().from(groceryItemsTable).where(eq(groceryItemsTable.listId, list.id));
+  const items = await DbService.getGroceryItemsByListId(list.id);
   res.json({
     id: list.id,
     weekOf: list.weekOf,
@@ -41,13 +38,8 @@ router.post("/grocery/plan", requireAuth, async (req, res): Promise<void> => {
   if (req.body.items && Array.isArray(req.body.items)) {
     try {
       const weekOf = new Date().toISOString().split("T")[0];
-      const [list] = await db.insert(groceryListsTable).values({ weekOf, userId: req.user!.id }).returning();
+      const list = await DbService.createGroceryList(req.user!.id, weekOf);
       
-      if (!list) {
-        res.status(500).json({ error: "Failed to create grocery list" });
-        return;
-      }
-
       const itemsToInsert = req.body.items.map((item: any) => ({
         listId: list.id,
         name: typeof item === "string" ? item : item.name,
@@ -58,7 +50,7 @@ router.post("/grocery/plan", requireAuth, async (req, res): Promise<void> => {
         nutritionNote: item.nutritionNote || null,
       }));
 
-      const items = await db.insert(groceryItemsTable).values(itemsToInsert).returning();
+      const items = await DbService.createGroceryItems(itemsToInsert);
 
       res.status(201).json({
         id: list.id,
@@ -96,20 +88,20 @@ Respond ONLY with a JSON array of grocery items. Each item must have:
 
 Return 12-16 items. Output ONLY the JSON array, no markdown.`;
 
-
   let parsedItems: Array<{ name: string; category: string; quantity: string; unit: string; nutritionNote?: string }> = [];
 
   try {
-    const model = getGeminiModel("You generate healthy weekly grocery lists in valid JSON array format.", true);
-    const completion = await model.generateContent(prompt);
-    const rawText = completion.response.text();
-    console.log(`[Grocery] Gemini responded (${rawText.length} chars)`);
-
-    const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-    parsedItems = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
-  } catch (geminiError: any) {
-    const isRateLimit = geminiError?.status === 429 || geminiError?.message?.includes("quota");
-    console.error(`[Grocery] Gemini error (${geminiError?.status || "unknown"}):`, isRateLimit ? "Rate limited — using fallback" : geminiError?.message);
+    if (process.env.GROQ_API_KEY) {
+      const rawText = await generateGroqCompletion([
+        { role: "system", content: "You generate healthy weekly grocery lists in valid JSON array format. Output ONLY the JSON array." },
+        { role: "user", content: prompt }
+      ]);
+      console.log(`[Grocery] Groq API responded (${rawText.length} chars)`);
+      const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+      parsedItems = JSON.parse(jsonMatch ? jsonMatch[0] : rawText);
+    }
+  } catch (groqErr: any) {
+    console.error(`[Grocery] Groq error:`, groqErr?.message || groqErr);
 
     // Intelligent fallback grocery list based on goal
     const goalLower = (goal || "").toLowerCase();
@@ -149,9 +141,8 @@ Return 12-16 items. Output ONLY the JSON array, no markdown.`;
     ];
   }
 
-
   const weekOf = new Date().toISOString().split("T")[0];
-  const [list] = await db.insert(groceryListsTable).values({ weekOf, userId: req.user!.id }).returning();
+  const list = await DbService.createGroceryList(req.user!.id, weekOf);
 
   if (!list || parsedItems.length === 0) {
     res.status(201).json({
@@ -174,7 +165,7 @@ Return 12-16 items. Output ONLY the JSON array, no markdown.`;
     nutritionNote: item.nutritionNote ?? null,
   }));
 
-  const items = await db.insert(groceryItemsTable).values(itemsToInsert).returning();
+  const items = await DbService.createGroceryItems(itemsToInsert);
 
   res.status(201).json({
     id: list.id,
@@ -192,26 +183,20 @@ router.patch("/grocery/items/:id/toggle", requireAuth, async (req, res): Promise
     return;
   }
 
-  const [item] = await db.select().from(groceryItemsTable).where(eq(groceryItemsTable.id, params.data.id));
+  const item = await DbService.getGroceryItemById(params.data.id);
   if (!item) {
     res.status(404).json({ error: "Grocery item not found" });
     return;
   }
 
   // Enforce list ownership check
-  const [list] = await db.select().from(groceryListsTable).where(
-    and(eq(groceryListsTable.id, item.listId), eq(groceryListsTable.userId, req.user!.id))
-  );
+  const list = await DbService.getGroceryListByIdAndUserId(item.listId, req.user!.id);
   if (!list) {
     res.status(403).json({ error: "Forbidden: You do not own this list" });
     return;
   }
 
-  const [updated] = await db
-    .update(groceryItemsTable)
-    .set({ isChecked: !item.isChecked })
-    .where(eq(groceryItemsTable.id, params.data.id))
-    .returning();
+  const updated = await DbService.toggleGroceryItem(params.data.id, !item.isChecked);
 
   res.json(updated);
 });

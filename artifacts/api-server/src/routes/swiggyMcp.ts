@@ -1,189 +1,189 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middlewares/authMiddleware";
+import {
+  startSwiggyAuth,
+  handleSwiggyOAuthCallback,
+  getSwiggyStatusForUser,
+  disconnectSwiggyUser,
+} from "../mcp/swiggyAuthService";
+import { SwiggyMcpManager, isSideEffectTool } from "../mcp/swiggyMcpManager";
+import { SwiggyTokenExpiredError, SwiggyMcpUnavailableError, SwiggyToolExecutionError } from "../mcp/errors";
+import { swiggyConfig } from "../lib/swiggyConfig";
 
 const router = Router();
 
-// Token exchange endpoint used by the frontend OAuth callback to perform a
-// server-side exchange of authorization code -> access token. This lets the
-// server keep client secrets out of the browser and provide a tolerant
-// sandbox fallback for development preview environments.
-router.post("/swiggy/mcp/token", async (req: Request, res: Response) => {
-  const { code, redirect_uri } = (req.body || {}) as { code?: string; redirect_uri?: string };
+/**
+ * TASK-008: GET /api/swiggy/auth/start
+ * Initiates the server-side OAuth 2.1 + PKCE flow for an authenticated NutriFlow user.
+ */
+router.get("/swiggy/auth/start", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { authorizationUrl, state } = await startSwiggyAuth(req.user!.id);
+    res.json({ authorizationUrl, state });
+  } catch (error: any) {
+    console.error("[SwiggyAuth] Failed to start authorization:", error);
+    res.status(500).json({ error: "Failed to initialize Swiggy authorization" });
+  }
+});
+
+/**
+ * TASK-009: GET /api/swiggy/auth/callback
+ * Server-side handler for the registered Swiggy OAuth redirect URI.
+ */
+router.get("/swiggy/auth/callback", async (req: Request, res: Response): Promise<void> => {
+  const { code, state, error, error_description } = req.query as Record<string, string>;
+
+  const result = await handleSwiggyOAuthCallback(code, state, error, error_description);
+
+  if (!result.success) {
+    console.warn("[SwiggyAuth Callback] Failed:", result.error);
+    const redirectUrl = new URL("/auth/callback", swiggyConfig.redirectUri);
+    redirectUrl.searchParams.set("swiggy_error", result.error || "Authorization failed");
+    return res.redirect(redirectUrl.toString());
+  }
+
+  const redirectUrl = new URL("/auth/callback", swiggyConfig.redirectUri);
+  redirectUrl.searchParams.set("swiggy_connected", "true");
+  return res.redirect(redirectUrl.toString());
+});
+
+/**
+ * TASK-009 & TASK-010: POST /api/swiggy/mcp/token
+ * Exchange authorization code server-side from frontend callback component.
+ */
+router.post("/swiggy/mcp/token", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { code, state } = (req.body || {}) as { code?: string; state?: string };
 
   if (!code) {
-    return res.status(400).json({ error: "Missing authorization code" });
+    res.status(400).json({ error: "Missing authorization code" });
+    return;
   }
 
-  const mcpServerUrl = process.env.SWIGGY_MCP_SERVER_URL || "https://mcp.swiggy.com/food";
-  const clientId = process.env.VITE_SWIGGY_CLIENT_ID || process.env.SWIGGY_CLIENT_ID || "nutriflow-ai";
-  const clientSecret = process.env.SWIGGY_CLIENT_SECRET || "";
+  const result = await handleSwiggyOAuthCallback(code, state, undefined);
 
+  if (!result.success) {
+    res.status(400).json({ error: result.error || "Token exchange failed" });
+    return;
+  }
+
+  res.json({
+    status: "CONNECTED",
+    message: "Swiggy account linked successfully",
+  });
+});
+
+/**
+ * TASK-038: GET /api/swiggy/status
+ * Returns current Swiggy connection status for the authenticated user.
+ */
+router.get("/swiggy/status", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const swiggyRes = await fetch(`${mcpServerUrl}/oauth/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: redirect_uri || process.env.SWIGGY_REDIRECT_URI || "https://nutriflow-ai.vercel.app/auth/callback",
-        client_id: clientId,
-        ...(clientSecret ? { client_secret: clientSecret } : {}),
-      }),
-    });
-
-    if (!swiggyRes.ok) {
-      const errorPayload = await swiggyRes.text();
-      console.warn(`[Swiggy MCP Proxy] Token exchange returned ${swiggyRes.status}:`, errorPayload);
-
-      return res.json({
-        access_token: `mcp_sandbox_token_${Date.now()}`,
-        token_type: "Bearer",
-        expires_in: 3600,
-        status: "sandbox_fallback",
-      });
-    }
-
-    const data = await swiggyRes.json();
-    return res.json(data);
-  } catch (err: any) {
-    console.error("[Swiggy MCP Proxy] Exception during token exchange:", err?.message ?? err);
-    return res.json({
-      access_token: `mcp_sandbox_token_${Date.now()}`,
-      token_type: "Bearer",
-      expires_in: 3600,
-      status: "sandbox_fallback",
-    });
+    const status = await getSwiggyStatusForUser(req.user!.id);
+    res.json(status);
+  } catch (error: any) {
+    console.error("[SwiggyStatus] Error retrieving connection status:", error);
+    res.status(500).json({ error: "Failed to retrieve connection status" });
   }
 });
 
-// Return mock/fallback addresses when token is missing, sandbox, or upstream rejects it.
-router.post("/swiggy/mcp/get_addresses", async (req: Request, res: Response) => {
-  const authHeader = (req.headers.authorization || "").toString();
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-
-  // Local sandbox fallback when no token or a sandbox token is provided
-  if (!token || token.startsWith("mcp_sandbox_token_")) {
-    return res.json({
-      status: "success",
-      source: "mcp_sandbox",
-      addresses: [
-        {
-          id: "swiggy_addr_1",
-          name: "Home",
-          address: "123 Tech Park Road, Sector 5",
-          city: "Bengaluru",
-          lat: 12.9716,
-          lng: 77.5946,
-          isDefault: true,
-        },
-      ],
-    });
-  }
-
-  const mcpServerUrl = process.env.SWIGGY_MCP_SERVER_URL || "https://mcp.swiggy.com/food";
-
+/**
+ * TASK-040: POST /api/swiggy/disconnect
+ * Disconnects the user's Swiggy connection by purging server-side stored credentials.
+ */
+router.post("/swiggy/disconnect", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const swiggyRes = await fetch(`${mcpServerUrl}/get_addresses`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(req.body || {}),
-    });
-
-    if (!swiggyRes.ok) {
-      const text = await swiggyRes.text().catch(() => "");
-      console.warn(`[Swiggy MCP Proxy] Live server returned ${swiggyRes.status}. Returning fallback addresses.`, text);
-
-      // If upstream indicates invalid token, return sandbox fallback
-      if (swiggyRes.status === 401 || /invalid_token/i.test(text)) {
-        return res.json({
-          status: "success",
-          source: "mcp_fallback",
-          addresses: [
-            {
-              id: "swiggy_addr_1",
-              name: "Home (Sandbox)",
-              address: "123 Tech Park Road, Sector 5",
-              city: "Bengaluru",
-              lat: 12.9716,
-              lng: 77.5946,
-              isDefault: true,
-            },
-          ],
-        });
-      }
-
-      // For other non-ok responses, still return a harmless fallback to keep UI stable
-      return res.json({
-        status: "success",
-        source: "mcp_fallback",
-        addresses: [
-          {
-            id: "swiggy_addr_1",
-            name: "Home (Sandbox)",
-            address: "123 Tech Park Road, Sector 5",
-            city: "Bengaluru",
-            lat: 12.9716,
-            lng: 77.5946,
-            isDefault: true,
-          },
-        ],
-      });
-    }
-
-    const data = await swiggyRes.json().catch(() => null);
-    return res.json(data ?? { status: "success", source: "mcp_live", addresses: [] });
-  } catch (err: any) {
-    console.error("[Swiggy MCP Proxy] Request failed:", err?.message ?? err);
-    return res.json({ error: "Proxy communication failure", status: "mcp_error" });
+    await disconnectSwiggyUser(req.user!.id);
+    res.json({ success: true, status: "DISCONNECTED", message: "Swiggy connection removed." });
+  } catch (error: any) {
+    console.error("[SwiggyDisconnect] Error purging connection:", error);
+    res.status(500).json({ error: "Failed to disconnect Swiggy account" });
   }
 });
 
-// Proxy tool executions securely to Swiggy MCP using the user's active session token
-router.post("/swiggy/mcp/:toolName", requireAuth, async (req, res): Promise<void> => {
-  const { toolName } = req.params;
-  const toolArguments = req.body;
-
-  // Extract the incoming Authorization header (Bearer token) sent from the client
-  const userAuthToken = req.headers.authorization || `Bearer ${process.env.SWIGGY_MCP_API_KEY}`;
-
+/**
+ * TASK-018: GET /api/swiggy/mcp/tools
+ * Discovers available tools across Food, Instamart, and Dineout for the user.
+ */
+router.get("/swiggy/mcp/tools", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
-    const swiggyMcpUrl = process.env.SWIGGY_MCP_SERVER_URL || "https://mcp.swiggy.com/food";
-    
-    const mcpResponse = await fetch(swiggyMcpUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": userAuthToken,
-        "X-User-Id": req.user!.id.toString() 
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: Date.now(),
-        method: "tools/call",
-        params: {
-          name: toolName,
-          arguments: toolArguments || {}
-        }
-      })
-    });
-
-    const result: any = await mcpResponse.json();
-    
-    if (result.error) {
-      res.status(400).json({ error: result.error });
+    const tools = await SwiggyMcpManager.discoverAllToolsForUser(req.user!.id);
+    const classified = tools.map((t) => ({
+      ...t,
+      requiresConfirmation: isSideEffectTool(t.name),
+    }));
+    res.json({ tools: classified });
+  } catch (error: any) {
+    if (error instanceof SwiggyTokenExpiredError) {
+      res.status(401).json({ error: error.message, code: error.code });
       return;
     }
-    
-    res.json(result.result);
+    console.error("[SwiggyMcpTools] Tool discovery error:", error);
+    res.status(500).json({ error: "Failed to discover Swiggy MCP tools" });
+  }
+});
+
+/**
+ * TASK-021, TASK-026, TASK-030, TASK-034, TASK-037: POST /api/swiggy/mcp/call
+ * Invokes a discovered Swiggy MCP tool with side-effect confirmation gating.
+ */
+router.post("/swiggy/mcp/call", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { serverType, toolName, toolArguments, confirmed } = req.body || {};
+
+  if (!serverType || !toolName) {
+    res.status(400).json({ error: "Missing required parameters: serverType, toolName" });
+    return;
+  }
+
+  // TASK-036 & TASK-037: Side Effect Confirmation Gate
+  const isSideEffect = isSideEffectTool(toolName);
+  if (isSideEffect && !confirmed) {
+    res.status(200).json({
+      confirmationRequired: true,
+      serverType,
+      toolName,
+      toolArguments: toolArguments || {},
+      message: `The operation "${toolName}" on Swiggy ${serverType} causes external side effects and requires explicit user confirmation.`,
+    });
+    return;
+  }
+
+  try {
+    const client = await SwiggyMcpManager.getClientForUser(req.user!.id, serverType);
+    const result = await client.callTool(toolName, toolArguments || {});
+    res.json({ status: "success", serverType, toolName, result });
   } catch (error: any) {
-    console.error(`[Swiggy MCP] Execution error in ${toolName}:`, error);
-    res.status(500).json({ error: "Swiggy MCP service unavailable" });
+    if (error instanceof SwiggyTokenExpiredError) {
+      res.status(401).json({ error: error.message, code: error.code });
+      return;
+    }
+    if (error instanceof SwiggyMcpUnavailableError) {
+      res.status(503).json({ error: error.message, code: error.code });
+      return;
+    }
+    if (error instanceof SwiggyToolExecutionError) {
+      res.status(400).json({ error: error.message, code: error.code });
+      return;
+    }
+    console.error(`[SwiggyMcpCall] Execution error in ${toolName}:`, error);
+    res.status(500).json({ error: `Swiggy MCP tool execution failed: ${error?.message || error}` });
+  }
+});
+
+/**
+ * Backward-compatible address endpoint using live MCP client when connected.
+ */
+router.post("/swiggy/mcp/get_addresses", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const client = await SwiggyMcpManager.getClientForUser(req.user!.id, "food");
+    const result = await client.callTool("get_addresses", req.body || {});
+    res.json({ status: "success", source: "mcp_live", addresses: result?.addresses || result });
+  } catch (error: any) {
+    if (error instanceof SwiggyTokenExpiredError) {
+      res.status(401).json({ error: "Swiggy authorization expired. Please re-authorize.", code: "TOKEN_EXPIRED" });
+      return;
+    }
+    // Return empty array rather than fake addresses when live server is unreachable
+    res.status(503).json({ error: "Swiggy address service unreachable", status: "mcp_unavailable" });
   }
 });
 

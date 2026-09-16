@@ -1,21 +1,28 @@
 import type { Request, Response, NextFunction } from "express";
-import { db, userProfilesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { DbService, type UserProfileModel } from "../services/dbService";
 import { createClient } from "@supabase/supabase-js";
 
 declare global {
   namespace Express {
     interface Request {
-      user?: typeof userProfilesTable.$inferSelect;
+      user?: UserProfileModel;
     }
   }
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl =
+  process.env.SUPABASE_URL ||
+  process.env.NEXT_PUBLIC_SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL;
+
+const supabaseAnonKey =
+  process.env.SUPABASE_SECRET_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("FATAL: Supabase URL and Anon Key must be provided in environment variables.");
+  throw new Error("FATAL: Supabase URL and Key must be provided in environment variables.");
 }
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -44,43 +51,30 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const email = supabaseUser.email.toLowerCase().trim();
     const isEmailVerified = !!supabaseUser.email_confirmed_at;
 
-    // 2. Fetch or auto-provision local database profile
-    let [user] = await db
-      .select()
-      .from(userProfilesTable)
-      .where(eq(userProfilesTable.email, email))
-      .limit(1);
+    // 2. Fetch or auto-provision user profile via Supabase Data API
+    let user = await DbService.getUserByEmail(email);
 
     if (!user) {
       // Auto-provision user profile
       const defaultName = supabaseUser.user_metadata?.name || email.split("@")[0].charAt(0).toUpperCase() + email.split("@")[0].slice(1);
       
-      const [created] = await db
-        .insert(userProfilesTable)
-        .values({
-          name: defaultName,
-          email: email,
-          password: "supabase_auth", // Dummy password placeholder to satisfy db constraints
-          isEmailVerified,
-          onboardingCompleted: false,
-          goal: "Stay Healthy",
-          dietaryPreferences: [],
-          allergies: [],
-          wellnessScore: 72,
-          streak: 0,
-        })
-        .returning();
-      user = created;
-      console.log(`[Auth] Auto-provisioned user profile in database: ${email}`);
+      user = await DbService.createUserProfile({
+        name: defaultName,
+        email: email,
+        password: "supabase_auth",
+        isEmailVerified,
+        onboardingCompleted: false,
+        goal: "Stay Healthy",
+        dietaryPreferences: [],
+        allergies: [],
+        wellnessScore: 72,
+        streak: 0,
+      });
+      console.log(`[Auth] Auto-provisioned user profile in database via Data API: ${email}`);
     } else {
       // Update email verified status if it changed
       if (user.isEmailVerified !== isEmailVerified) {
-        const [updated] = await db
-          .update(userProfilesTable)
-          .set({ isEmailVerified })
-          .where(eq(userProfilesTable.id, user.id))
-          .returning();
-        user = updated;
+        user = await DbService.updateUserProfile(user.id, { isEmailVerified });
         console.log(`[Auth] Updated verification status for user in database: ${email}`);
       }
     }

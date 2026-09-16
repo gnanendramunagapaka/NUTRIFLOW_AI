@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const geminiApiKey = process.env.GEMINI_API_KEY || "AIzaSyARGxuqrzLJsVqNpbtPUm7Op4NiqA0pfmA";
-
+const geminiApiKey = process.env.GEMINI_API_KEY;
 if (!geminiApiKey) {
   console.warn("[Gemini] GEMINI_API_KEY is missing — AI features will use fallback mode.");
 }
@@ -10,10 +9,10 @@ export const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 // Model preference order — tries each until one works
 const MODEL_PREFERENCE = [
-  "gemini-2.0-flash-lite",
+  "gemini-1.5-flash",
+  "gemini-2.5-flash",
+  "gemini-1.5-pro",
   "gemini-2.0-flash",
-  "gemini-1.5-flash-latest",
-  "gemini-flash-latest",
 ];
 
 /** Returns a model instance. Tries preferred model first. */
@@ -23,6 +22,68 @@ export function getGeminiModel(systemInstruction?: string, jsonMode = false) {
     systemInstruction,
     generationConfig: jsonMode ? { responseMimeType: "application/json" } : undefined,
   });
+}
+
+/** 
+ * Groq API completion helper (OpenAI-compatible).
+ * Uses GROQ_API_KEY if configured in environment.
+ */
+const GROQ_MODEL_PREFERENCE = [
+  "groq/compound",
+  "groq/compound-mini",
+  "qwen/qwen3.8-27b",
+  "openai/gpt-oss-20b",
+  "openai/gpt-oss-120b",
+];
+
+export async function generateGroqCompletion(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  customModel?: string
+): Promise<string> {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  if (!groqApiKey) {
+    throw new Error("GROQ_API_KEY is not set in environment.");
+  }
+
+  const modelsToTry = customModel ? [customModel, ...GROQ_MODEL_PREFERENCE] : GROQ_MODEL_PREFERENCE;
+
+  let lastError = "";
+
+  for (const model of modelsToTry) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${groqApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 1024,
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "");
+        lastError = `Groq HTTP ${response.status} (${model}): ${errText}`;
+        console.warn(`[Groq] Model "${model}" failed, trying next model... (${errText})`);
+        continue;
+      }
+
+      const json = (await response.json()) as any;
+      const content = json.choices?.[0]?.message?.content;
+      if (content) {
+        console.log(`[Groq] Successfully generated completion using model "${model}"`);
+        return content;
+      }
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+    }
+  }
+
+  throw new Error(`Groq API Error: ${lastError || "All Groq models failed"}`);
 }
 
 /** 

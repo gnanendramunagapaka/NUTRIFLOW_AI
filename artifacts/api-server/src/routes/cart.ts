@@ -1,6 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, cartItemsTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { DbService } from "../services/dbService";
 import { requireAuth } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
@@ -8,7 +7,7 @@ const router: IRouter = Router();
 // GET /cart: Fetch all cart items for user
 router.get("/cart", requireAuth, async (req, res): Promise<void> => {
   try {
-    const items = await db.select().from(cartItemsTable).where(eq(cartItemsTable.userId, req.user!.id));
+    const items = await DbService.getCartItems(req.user!.id);
     res.json(items);
   } catch (error) {
     console.error("[Cart API] Fetch error:", error);
@@ -27,41 +26,30 @@ router.post("/cart", requireAuth, async (req, res): Promise<void> => {
     }
 
     // Check if item already in cart
-    const [existing] = await db
-      .select()
-      .from(cartItemsTable)
-      .where(and(eq(cartItemsTable.userId, req.user!.id), eq(cartItemsTable.itemId, itemId)))
-      .limit(1);
+    const existing = await DbService.findCartItem(req.user!.id, itemId);
 
     if (existing) {
-      const [updated] = await db
-        .update(cartItemsTable)
-        .set({ quantity: existing.quantity + quantity })
-        .where(eq(cartItemsTable.id, existing.id))
-        .returning();
+      const updated = await DbService.updateCartItemQuantity(existing.id, existing.quantity + quantity);
       res.json(updated);
     } else {
-      const [inserted] = await db
-        .insert(cartItemsTable)
-        .values({
-          userId: req.user!.id,
-          itemId,
-          name,
-          price,
-          quantity,
-          type,
-          calories,
-          protein,
-          carbs,
-          fat,
-          healthScore,
-          imageUrl,
-          cuisine,
-          category,
-          unit,
-          description
-        })
-        .returning();
+      const inserted = await DbService.addCartItem({
+        userId: req.user!.id,
+        itemId,
+        name,
+        price,
+        quantity,
+        type,
+        calories,
+        protein,
+        carbs,
+        fat,
+        healthScore,
+        imageUrl,
+        cuisine,
+        category,
+        unit,
+        description
+      });
       res.status(201).json(inserted);
     }
   } catch (error) {
@@ -78,24 +66,18 @@ router.put("/cart/:itemId", requireAuth, async (req, res): Promise<void> => {
 
     if (quantity === undefined || quantity <= 0) {
       // Remove if quantity is <= 0
-      await db
-        .delete(cartItemsTable)
-        .where(and(eq(cartItemsTable.userId, req.user!.id), eq(cartItemsTable.itemId, itemId)));
+      await DbService.deleteCartItem(req.user!.id, itemId);
       res.json({ success: true, removed: true });
       return;
     }
 
-    const [updated] = await db
-      .update(cartItemsTable)
-      .set({ quantity })
-      .where(and(eq(cartItemsTable.userId, req.user!.id), eq(cartItemsTable.itemId, itemId)))
-      .returning();
-
-    if (!updated) {
+    const existing = await DbService.findCartItem(req.user!.id, itemId);
+    if (!existing) {
       res.status(404).json({ error: "Cart item not found" });
       return;
     }
 
+    const updated = await DbService.updateCartItemQuantity(existing.id, quantity);
     res.json(updated);
   } catch (error) {
     console.error("[Cart API] Update error:", error);
@@ -107,9 +89,7 @@ router.put("/cart/:itemId", requireAuth, async (req, res): Promise<void> => {
 router.delete("/cart/:itemId", requireAuth, async (req, res): Promise<void> => {
   try {
     const itemId = req.params.itemId as string;
-    await db
-      .delete(cartItemsTable)
-      .where(and(eq(cartItemsTable.userId, req.user!.id), eq(cartItemsTable.itemId, itemId)));
+    await DbService.deleteCartItem(req.user!.id, itemId);
     res.sendStatus(204);
   } catch (error) {
     console.error("[Cart API] Delete error:", error);
@@ -120,7 +100,7 @@ router.delete("/cart/:itemId", requireAuth, async (req, res): Promise<void> => {
 // DELETE /cart: Clear all items
 router.delete("/cart", requireAuth, async (req, res): Promise<void> => {
   try {
-    await db.delete(cartItemsTable).where(eq(cartItemsTable.userId, req.user!.id));
+    await DbService.clearCart(req.user!.id);
     res.sendStatus(204);
   } catch (error) {
     console.error("[Cart API] Clear error:", error);

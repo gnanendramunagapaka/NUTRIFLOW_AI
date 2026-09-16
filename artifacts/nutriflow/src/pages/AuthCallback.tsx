@@ -21,10 +21,10 @@ export default function AuthCallback() {
         const urlParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
-        // 1. Check for incoming Swiggy OAuth tokens / authorization codes
+        // 1. Check for incoming Swiggy OAuth authorization codes & state
         const swiggyError = urlParams.get("error") || hashParams.get("error");
         const swiggyCode = urlParams.get("code");
-        const swiggyToken = urlParams.get("access_token") || hashParams.get("access_token") || urlParams.get("swiggy_token");
+        const swiggyState = urlParams.get("state");
 
         if (swiggyError) {
           console.warn("[AUTH CALLBACK] Swiggy OAuth error reported:", swiggyError);
@@ -35,16 +35,38 @@ export default function AuthCallback() {
           });
         }
 
-        if (swiggyToken || swiggyCode) {
-          console.log("[AUTH CALLBACK] Storing Swiggy OAuth credentials...");
-          const tokenToStore = swiggyToken || swiggyCode || "";
-          localStorage.setItem("swiggy_access_token", tokenToStore);
-          localStorage.setItem("swiggy_oauth_connected", "true");
+        if (swiggyCode && swiggyState) {
+          console.log("[AUTH CALLBACK] Processing authorization code server-side...");
+          // TASK-013: Ensure access tokens are NEVER stored in browser storage
+          localStorage.removeItem("swiggy_access_token");
 
-          toast({
-            title: "Swiggy Connected! ⚡",
-            description: "Your Swiggy account has been linked successfully.",
-          });
+          try {
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+            const tokenRes = await fetch("/api/swiggy/mcp/token", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...(currentSession?.access_token ? { Authorization: `Bearer ${currentSession.access_token}` } : {}),
+              },
+              body: JSON.stringify({ code: swiggyCode, state: swiggyState }),
+            });
+
+            if (tokenRes.ok) {
+              toast({
+                title: "Swiggy Connected! ⚡",
+                description: "Your Swiggy account has been linked successfully.",
+              });
+            } else {
+              const errPayload = await tokenRes.json().catch(() => null);
+              toast({
+                title: "Swiggy Connection Notice",
+                description: errPayload?.error || "Token exchange returned error.",
+                variant: "destructive",
+              });
+            }
+          } catch (ex) {
+            console.error("[AUTH CALLBACK] Swiggy server exchange exception:", ex);
+          }
         }
 
         const recoveryPromise = (async () => {
@@ -67,7 +89,7 @@ export default function AuthCallback() {
 
           if (!activeSession) {
             // If Swiggy OAuth was processed without an active Supabase session, proceed gracefully
-            if (swiggyToken || swiggyCode) {
+            if (swiggyCode) {
               return { activeSession: null, profile: null };
             }
             throw new Error("No active session found.");

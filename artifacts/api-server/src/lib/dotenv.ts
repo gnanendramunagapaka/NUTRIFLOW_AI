@@ -4,24 +4,20 @@ import path from "node:path";
 export function config(): { parsed?: Record<string, string> } {
   const envPaths = [
     path.resolve(process.cwd(), ".env"),
+    path.resolve(process.cwd(), ".env.local"),
+    path.resolve(process.cwd(), "../.env"),
+    path.resolve(process.cwd(), "../.env.local"),
     path.resolve(import.meta.dirname, "../../.env"),
+    path.resolve(import.meta.dirname, "../../.env.local"),
     path.resolve(import.meta.dirname, "../../../../.env"),
+    path.resolve(import.meta.dirname, "../../../../.env.local"),
   ];
 
   const parsed: Record<string, string> = {};
 
   for (const envPath of envPaths) {
     if (fs.existsSync(envPath)) {
-      if (typeof process.loadEnvFile === "function") {
-        try {
-          process.loadEnvFile(envPath);
-        } catch {
-          loadManual(envPath, parsed);
-        }
-      } else {
-        loadManual(envPath, parsed);
-      }
-      break;
+      loadManual(envPath, parsed);
     }
   }
 
