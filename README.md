@@ -1083,7 +1083,4 @@ Built with ❤️ by **Gnanendra Munagapaka** and contributors.
 `React` · `TypeScript` · `Vite` · `Supabase` · `Groq` · `Swiggy MCP` · `OAuth 2.1`
 
 </div>
-```
 
-
-should appear.
