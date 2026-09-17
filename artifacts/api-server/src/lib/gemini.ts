@@ -5,7 +5,7 @@ if (!geminiApiKey) {
   console.warn("[Gemini] GEMINI_API_KEY is missing — AI features will use fallback mode.");
 }
 
-export const genAI = new GoogleGenerativeAI(geminiApiKey);
+export const genAI = new GoogleGenerativeAI(geminiApiKey || "");
 
 // Model preference order — tries each until one works
 const MODEL_PREFERENCE = [
