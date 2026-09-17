@@ -358,28 +358,44 @@ export default function Chat() {
 
   const loadConversations = async () => {
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) {
-        setConversations([]);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setConversations(MOCK_PREVIOUS_CHATS);
+        if (MOCK_PREVIOUS_CHATS.length > 0 && !activeId) {
+          setActiveId(MOCK_PREVIOUS_CHATS[0].id);
+        }
         return;
       }
 
-      const { data, error } = await supabase
-        .from("ai_conversations")
-        .select("*")
-        .eq("user_id", sbUser.id)
-        .order("created_at", { ascending: false });
+      const res = await fetch("/api/openai/conversations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      if (error) {
-        console.warn("[Chat] Conversations fetch error (non-critical):", error.message);
-        setConversations([]);
+      if (!res.ok) {
+        setConversations(MOCK_PREVIOUS_CHATS);
+        if (MOCK_PREVIOUS_CHATS.length > 0 && !activeId) {
+          setActiveId(MOCK_PREVIOUS_CHATS[0].id);
+        }
         return;
       }
 
-      setConversations(data || []);
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setConversations(data);
+        if (!activeId) setActiveId(String(data[0].id));
+      } else {
+        setConversations(MOCK_PREVIOUS_CHATS);
+        if (MOCK_PREVIOUS_CHATS.length > 0 && !activeId) {
+          setActiveId(MOCK_PREVIOUS_CHATS[0].id);
+        }
+      }
     } catch (e) {
-      console.warn("[Chat] loadConversations failed (non-critical):", e);
-      setConversations([]);
+      console.warn("[Chat] loadConversations failed:", e);
+      setConversations(MOCK_PREVIOUS_CHATS);
+      if (MOCK_PREVIOUS_CHATS.length > 0 && !activeId) {
+        setActiveId(MOCK_PREVIOUS_CHATS[0].id);
+      }
     } finally {
       setLoadingConversations(false);
     }
@@ -388,29 +404,36 @@ export default function Chat() {
   const loadMessages = async (convId: string) => {
     setLoadingMessages(true);
     try {
-      if (convId.startsWith("c-")) {
-        // Load messages from mock chats
-        const mockMatch = MOCK_PREVIOUS_CHATS.find(c => c.id === convId);
-        setMessages(mockMatch ? mockMatch.messages.map((m, i) => ({ id: `${convId}-${i}`, role: m.role, content: m.content })) : []);
+      if (String(convId).startsWith("c-")) {
+        const mockMatch = MOCK_PREVIOUS_CHATS.find((c) => c.id === convId);
+        setMessages(
+          mockMatch
+            ? mockMatch.messages.map((m, i) => ({
+                id: `${convId}-${i}`,
+                role: m.role,
+                content: m.content,
+              }))
+            : []
+        );
         setLoadingMessages(false);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("ai_messages")
-        .select("*")
-        .eq("conversation_id", convId)
-        .order("created_at", { ascending: true });
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch(`/api/openai/conversations/${convId}/messages`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
 
-      if (error) {
-        console.warn("[Chat] Messages fetch error (non-critical):", error.message);
+      if (!res.ok) {
         setMessages([]);
         return;
       }
 
-      setMessages(data || []);
+      const data = await res.json();
+      setMessages(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.warn("[Chat] loadMessages failed (non-critical):", e);
+      console.warn("[Chat] loadMessages failed:", e);
       setMessages([]);
     } finally {
       setLoadingMessages(false);
@@ -437,25 +460,30 @@ export default function Chat() {
 
   const handleCreate = async () => {
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        toast({ title: "Please sign in to create a new chat", variant: "destructive" });
+        return;
+      }
 
-      const { data, error } = await supabase
-        .from("ai_conversations")
-        .insert({
-          title: "New Conversation",
-          user_id: sbUser.id
-        })
-        .select()
-        .single();
+      const res = await fetch("/api/openai/conversations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ title: "New Conversation" }),
+      });
 
-      if (error) throw error;
-      
-      setConversations(old => [data, ...old]);
-      setActiveId(data.id);
-    } catch (e) {
-      console.error("Failed to create conversation in Supabase:", e);
-      toast({ title: "Failed to create conversation", variant: "destructive" });
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      const data = await res.json();
+
+      setConversations((old) => [data, ...old]);
+      setActiveId(String(data.id));
+    } catch (e: any) {
+      console.error("Failed to create conversation:", e);
+      toast({ title: "Failed to create conversation", description: e.message, variant: "destructive" });
     }
   };
 
@@ -463,28 +491,31 @@ export default function Chat() {
   const handleQuickPrompt = async (promptText: string) => {
     if (isStreaming) return;
     let targetConvId = activeId;
-    
-    // Create new conversation if none is active
-    if (!targetConvId) {
-      try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (!sbUser) return;
-        const { data, error } = await supabase
-          .from("ai_conversations")
-          .insert({
-            title: promptText.length > 25 ? promptText.slice(0, 25) + "..." : promptText,
-            user_id: sbUser.id
-          })
-          .select()
-          .single();
 
-        if (error) throw error;
-        setConversations(old => [data, ...old]);
-        targetConvId = data.id;
-        setActiveId(data.id);
+    if (!targetConvId || String(targetConvId).startsWith("c-")) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        if (token) {
+          const res = await fetch("/api/openai/conversations", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              title: promptText.length > 25 ? promptText.slice(0, 25) + "..." : promptText,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setConversations((old) => [data, ...old.filter((c) => c.id !== activeId)]);
+            targetConvId = String(data.id);
+            setActiveId(String(data.id));
+          }
+        }
       } catch (e) {
         console.error(e);
-        return;
       }
     }
 
@@ -505,54 +536,47 @@ export default function Chat() {
     setStreamingContent("");
 
     const optimisticUserMsg = {
-      id: Math.random().toString(),
+      id: `user-${Date.now()}`,
       role: "user",
       content: userMessage,
-      conversation_id: activeId
+      conversationId: activeId,
     };
 
     try {
-      setMessages(old => [...(old || []), optimisticUserMsg]);
+      setMessages((old) => [...(old || []), optimisticUserMsg]);
 
-      // If active conversation is a mock, convert it to a database conversation first
       let currentConvId = activeId;
-      if (activeId.startsWith("c-")) {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (!sbUser) return;
-        
-        const { data, error } = await supabase
-          .from("ai_conversations")
-          .insert({
-            title: userMessage.length > 25 ? userMessage.slice(0, 25) + "..." : userMessage,
-            user_id: sbUser.id
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        setConversations(old => [data, ...old.filter(c => c.id !== activeId)]);
-        currentConvId = data.id;
-        setActiveId(data.id);
-      }
-
-      const { data: userMsg, error: userErr } = await supabase
-        .from("ai_messages")
-        .insert({
-          conversation_id: currentConvId,
-          role: "user",
-          content: userMessage
-        })
-        .select()
-        .single();
-
-      if (userErr) throw userErr;
-
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const chatHistoryContext = messages.slice(-10).map((m: any) => ({
+      // If active conversation is a mock ("c-1"), create a real database conversation first
+      if (String(activeId).startsWith("c-")) {
+        if (!token) {
+          throw new Error("Please log in to send chat messages");
+        }
+        const resConv = await fetch("/api/openai/conversations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            title: userMessage.length > 25 ? userMessage.slice(0, 25) + "..." : userMessage,
+          }),
+        });
+
+        if (!resConv.ok) {
+          throw new Error(`Failed to create conversation: HTTP ${resConv.status}`);
+        }
+        const convData = await resConv.json();
+        setConversations((old) => [convData, ...old.filter((c) => c.id !== activeId)]);
+        currentConvId = String(convData.id);
+        setActiveId(String(convData.id));
+      }
+
+      const chatHistoryContext = (messages || []).slice(-10).map((m: any) => ({
         role: m.role,
-        content: m.content
+        content: m.content,
       }));
 
       const res = await fetch(`/api/openai/conversations/${currentConvId}/messages`, {
@@ -563,7 +587,7 @@ export default function Chat() {
         },
         body: JSON.stringify({
           content: userMessage,
-          history: chatHistoryContext
+          history: chatHistoryContext,
         }),
       });
 
@@ -580,7 +604,7 @@ export default function Chat() {
         const { done, value } = await reader.read();
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n").filter(l => l.trim());
+        const lines = chunk.split("\n").filter((l) => l.trim());
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
@@ -608,34 +632,29 @@ export default function Chat() {
 
       setIsFallback(wasFallback);
 
-      const { data: assistantMsgRow, error: assistantErr } = await supabase
-        .from("ai_messages")
-        .insert({
-          conversation_id: currentConvId,
-          role: "assistant",
-          content: assistantMsg
-        })
-        .select()
-        .single();
+      const assistantMsgObj = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: assistantMsg,
+        conversationId: currentConvId,
+      };
 
-      if (assistantErr) throw assistantErr;
-
-      setMessages(old => [
+      setMessages((old) => [
         ...(old || []).filter((m: any) => m.id !== optimisticUserMsg.id),
-        userMsg,
-        assistantMsgRow
+        optimisticUserMsg,
+        assistantMsgObj,
       ]);
 
       if (wasFallback) {
         toast({
           title: "Demo mode active",
-          description: "Gemini API quota reached. Showing smart example responses.",
+          description: "Using fallback response mode.",
         });
       }
     } catch (err: any) {
       console.error("Chat error:", err);
       toast({ title: "Failed to send message", description: err.message, variant: "destructive" });
-      setMessages(old => (old || []).filter((m: any) => m.id !== optimisticUserMsg.id));
+      setMessages((old) => (old || []).filter((m: any) => m.id !== optimisticUserMsg.id));
     } finally {
       setIsStreaming(false);
       setStreamingContent("");
