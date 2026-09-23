@@ -31,21 +31,33 @@ const queryClient = new QueryClient({
   },
 });
 
+// Stable wrapper components — prevents Wouter from remounting on every state change
+const LoginPage = () => <GuestRoute component={Login} />;
+const OnboardingPage = () => <OnboardingRoute component={Onboarding} />;
+const DashboardPage = () => <ProtectedRoute component={Dashboard} />;
+const ChatPage = () => <ProtectedRoute component={Chat} />;
+const DiscoverPage = () => <ProtectedRoute component={Discover} />;
+const GroceryPage = () => <ProtectedRoute component={Grocery} />;
+const ProfilePage = () => <ProtectedRoute component={Profile} />;
+const CheckoutPage = () => <ProtectedRoute component={Checkout} />;
+const OrderConfirmationPage = () => <ProtectedRoute component={OrderConfirmation} />;
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Landing} />
-      <Route path="/login" component={() => <GuestRoute component={Login} />} />
-      <Route path="/onboarding" component={() => <OnboardingRoute component={Onboarding} />} />
+      <Route path="/login" component={LoginPage} />
+      <Route path="/onboarding" component={OnboardingPage} />
       <Route path="/verify-email" component={VerifyEmail} />
+      <Route path="/auth/callback/" component={AuthCallback} />
       <Route path="/auth/callback" component={AuthCallback} />
-      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
-      <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
-      <Route path="/discover" component={() => <ProtectedRoute component={Discover} />} />
-      <Route path="/grocery" component={() => <ProtectedRoute component={Grocery} />} />
-      <Route path="/profile" component={() => <ProtectedRoute component={Profile} />} />
-      <Route path="/checkout" component={() => <ProtectedRoute component={Checkout} />} />
-      <Route path="/order-confirmation" component={() => <ProtectedRoute component={OrderConfirmation} />} />
+      <Route path="/dashboard" component={DashboardPage} />
+      <Route path="/chat" component={ChatPage} />
+      <Route path="/discover" component={DiscoverPage} />
+      <Route path="/grocery" component={GroceryPage} />
+      <Route path="/profile" component={ProfilePage} />
+      <Route path="/checkout" component={CheckoutPage} />
+      <Route path="/order-confirmation" component={OrderConfirmationPage} />
       <Route component={NotFound} />
     </Switch>
   );

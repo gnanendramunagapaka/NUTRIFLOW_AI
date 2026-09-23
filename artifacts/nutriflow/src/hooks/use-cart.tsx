@@ -40,11 +40,8 @@ export function useSwiggyAddresses() {
   return useQuery<Address[]>({
     queryKey: ["swiggy", "addresses"],
     queryFn: async () => {
-      // Prefer the live Supabase session token, but fall back to any stored Swiggy token (sandbox or real)
-      const swiggyToken = session?.access_token || localStorage.getItem("swiggy_access_token") || "";
-
-      // If no token or sandbox token, return local defaults immediately to avoid network calls.
-      if (!swiggyToken || swiggyToken.startsWith("mcp_sandbox_token_")) {
+      // Must be authenticated with Supabase to query user's Swiggy connection
+      if (!session?.access_token) {
         return DEFAULT_ADDRESSES;
       }
 
@@ -52,7 +49,7 @@ export function useSwiggyAddresses() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${swiggyToken}`,
+          "Authorization": `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({}),
       });

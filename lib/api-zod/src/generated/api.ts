@@ -198,10 +198,10 @@ export const ToggleGroceryItemResponse = zod.object({
  * @summary Get user profile
  */
 export const GetProfileResponse = zod.object({
-  "id": zod.number(),
+  "id": zod.union([zod.string(), zod.number()]),
   "name": zod.string(),
   "email": zod.string(),
-  "isEmailVerified": zod.boolean(),
+  "isEmailVerified": zod.boolean().default(false),
   "onboardingCompleted": zod.boolean(),
   "age": zod.number().nullish(),
   "weight": zod.number().nullish(),
@@ -238,10 +238,10 @@ export const UpdateProfileBody = zod.object({
 })
 
 export const UpdateProfileResponse = zod.object({
-  "id": zod.number(),
+  "id": zod.union([zod.string(), zod.number()]),
   "name": zod.string(),
   "email": zod.string(),
-  "isEmailVerified": zod.boolean(),
+  "isEmailVerified": zod.boolean().default(false),
   "onboardingCompleted": zod.boolean(),
   "age": zod.number().nullish(),
   "weight": zod.number().nullish(),
@@ -257,6 +257,7 @@ export const UpdateProfileResponse = zod.object({
   "streak": zod.number(),
   "avatarUrl": zod.string().nullish()
 })
+
 
 
 /**

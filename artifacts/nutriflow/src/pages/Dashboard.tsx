@@ -312,11 +312,14 @@ export default function Dashboard() {
 
         {/* Recommended Foods Block */}
         <div className="space-y-5 pt-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <Flame className="text-orange-500 h-6 w-6" />
               Healthy Swiggy Meals For You
             </h2>
+            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1 shrink-0">
+              ⚡ Powered by Swiggy
+            </span>
           </div>
 
           {loadingMeals ? (

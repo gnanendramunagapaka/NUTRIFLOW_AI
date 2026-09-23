@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -26,7 +26,7 @@ import {
   Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { connectSwiggyAccount, isSwiggyConnected } from "@/lib/swiggyAuth";
+import { connectSwiggyAccount, getSwiggyConnectionStatus } from "@/lib/swiggyAuth";
 
 export default function Checkout() {
   const [, setLocation] = useLocation();
@@ -53,21 +53,25 @@ export default function Checkout() {
   const { data: liveAddresses, isLoading: isLoadingAddresses, refetch: refetchSwiggyAddresses } = useSwiggyAddresses();
   const activeAddresses = liveAddresses || addresses;
 
-  const [swiggyConnected, setSwiggyConnected] = useState(() => isSwiggyConnected());
+  const [swiggyConnected, setSwiggyConnected] = useState(false);
   const [isConnectingSwiggy, setIsConnectingSwiggy] = useState(false);
-  // No OTP modal — Swiggy connection is handled via `connectSwiggyAccount`
+
+  useEffect(() => {
+    getSwiggyConnectionStatus().then((status) => {
+      setSwiggyConnected(status.connected);
+    });
+  }, []);
 
   const handleConnectSwiggy = async () => {
     setIsConnectingSwiggy(true);
     try {
-      const success = await connectSwiggyAccount();
-      if (success) {
-        setSwiggyConnected(true);
-        toast({
-          title: "Swiggy Account Linked! ⚡",
-          description: "Your Swiggy delivery addresses and partner benefits are active.",
-        });
-      }
+      await connectSwiggyAccount("/checkout");
+    } catch (err: any) {
+      toast({
+        title: "Connection Failed",
+        description: err?.message || "Failed to initiate Swiggy connection",
+        variant: "destructive",
+      });
     } finally {
       setIsConnectingSwiggy(false);
     }
@@ -231,7 +235,8 @@ export default function Checkout() {
                   ) : (
                     <div className="text-center">
                       <p className="text-sm text-muted-foreground mb-3">No saved Swiggy addresses found.</p>
-                      <Button onClick={() => setIsSwiggyModalOpen(true)} className="bg-[#FC8019] hover:bg-[#E26E10] text-white">
+                      <Button onClick={handleConnectSwiggy} disabled={isConnectingSwiggy} className="bg-[#FC8019] hover:bg-[#E26E10] text-white">
+                        {isConnectingSwiggy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                         ⚡ Connect Swiggy to Load Saved Addresses
                       </Button>
                     </div>
@@ -239,11 +244,13 @@ export default function Checkout() {
                 ) : (
                   <div className="text-center">
                     <p className="text-sm text-muted-foreground mb-3">Connect your Swiggy account to load saved delivery addresses.</p>
-                    <Button onClick={() => setIsSwiggyModalOpen(true)} className="bg-[#FC8019] hover:bg-[#E26E10] text-white">
+                    <Button onClick={handleConnectSwiggy} disabled={isConnectingSwiggy} className="bg-[#FC8019] hover:bg-[#E26E10] text-white">
+                      {isConnectingSwiggy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                       ⚡ Connect Swiggy to Load Saved Addresses
                     </Button>
                   </div>
                 )}
+
               </CardContent>
             </Card>
 
@@ -484,20 +491,8 @@ export default function Checkout() {
           </div>
         </div>
       </div>
-      <SwiggyAuthModal
-        isOpen={isSwiggyModalOpen}
-        onClose={() => setIsSwiggyModalOpen(false)}
-        onSuccess={async () => {
-          setIsSwiggyModalOpen(false);
-          setSwiggyConnected(true);
-          try {
-            await refetchSwiggyAddresses?.();
-          } catch {
-            // ignore
-          }
-        }}
-      />
     </Layout>
   );
 }
+
 

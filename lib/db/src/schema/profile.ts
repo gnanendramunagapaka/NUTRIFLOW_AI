@@ -1,15 +1,11 @@
-import { pgTable, text, serial, timestamp, integer, real, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, integer, real, boolean, uuid, serial } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const userProfilesTable = pgTable("user_profiles", {
-  id: serial("id").primaryKey(),
+  id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").unique().notNull(),
-  password: text("password").notNull(),
-  isEmailVerified: boolean("is_email_verified").notNull().default(false),
-  verificationCode: text("verification_code"),
-  sessionToken: text("session_token"),
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   age: integer("age"),
   weight: real("weight"),
@@ -30,7 +26,7 @@ export const userProfilesTable = pgTable("user_profiles", {
 
 export const wellnessTrackingTable = pgTable("wellness_tracking", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => userProfilesTable.id),
+  userId: uuid("user_id").notNull().references(() => userProfilesTable.id),
   date: text("date").notNull(),
   proteinIntake: real("protein_intake").notNull().default(0),
   waterIntake: real("water_intake").notNull().default(0),
@@ -40,7 +36,7 @@ export const wellnessTrackingTable = pgTable("wellness_tracking", {
 
 export const onboardingPreferencesTable = pgTable("onboarding_preferences", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => userProfilesTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => userProfilesTable.id, { onDelete: "cascade" }),
   goal: text("goal"),
   dietaryPreferences: text("dietary_preferences").array().notNull().default([]),
   allergies: text("allergies").array().notNull().default([]),
@@ -51,7 +47,7 @@ export const onboardingPreferencesTable = pgTable("onboarding_preferences", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const insertUserProfileSchema = createInsertSchema(userProfilesTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertUserProfileSchema = createInsertSchema(userProfilesTable).omit({ createdAt: true, updatedAt: true });
 export type InsertUserProfile = z.infer<typeof insertUserProfileSchema>;
 export type UserProfile = typeof userProfilesTable.$inferSelect;
 
@@ -62,4 +58,3 @@ export type WellnessTracking = typeof wellnessTrackingTable.$inferSelect;
 export const insertOnboardingPreferencesSchema = createInsertSchema(onboardingPreferencesTable).omit({ id: true, updatedAt: true });
 export type InsertOnboardingPreferences = z.infer<typeof insertOnboardingPreferencesSchema>;
 export type OnboardingPreferences = typeof onboardingPreferencesTable.$inferSelect;
-

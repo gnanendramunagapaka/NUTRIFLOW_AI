@@ -79,7 +79,7 @@ export function OnboardingRoute({ component: Component }: ProtectedRouteProps) {
 }
 // 3. GuestRoute: For Login / Signup page
 export function GuestRoute({ component: Component }: ProtectedRouteProps) {
-  const { loading } = useAuth();
+  const { user, supabaseUser, onboarded, loading } = useAuth();
 
   if (loading) {
     return (
@@ -92,6 +92,14 @@ export function GuestRoute({ component: Component }: ProtectedRouteProps) {
         </div>
       </div>
     );
+  }
+
+  // Authenticated user — redirect appropriately instead of showing login page
+  if (user && user.id !== "guest") {
+    if (supabaseUser && !supabaseUser.email_confirmed_at) {
+      return <Redirect to={`/verify-email?email=${encodeURIComponent(supabaseUser.email || "")}`} />;
+    }
+    return <Redirect to={onboarded ? "/dashboard" : "/onboarding"} />;
   }
 
   return <Component />;

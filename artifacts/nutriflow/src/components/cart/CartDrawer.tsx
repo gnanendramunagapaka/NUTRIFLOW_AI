@@ -204,7 +204,7 @@ export function CartDrawer() {
                 
                 <div className="flex items-center justify-center gap-1 text-[10px] text-muted-foreground text-center">
                   <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                  <span>Swiggy commerce workflow integration enabled.</span>
+                  <span>⚡ Powered by Swiggy commerce workflows</span>
                 </div>
               </div>
             </div>

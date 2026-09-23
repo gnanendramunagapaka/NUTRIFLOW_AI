@@ -374,11 +374,18 @@ export default function Grocery() {
             {/* Instamart Shelf Selection */}
             <div className="space-y-5 pt-8">
               <div className="border-t border-border/50 pt-8">
-                <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                  <Sparkles className="text-emerald-600 h-5.5 w-5.5" />
-                  Instamart Healthy Essentials
-                </h2>
-                <p className="text-xs text-muted-foreground mt-1">Superfoods, organic produce, and health items delivered in 15 mins.</p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
+                      <Sparkles className="text-emerald-600 h-5.5 w-5.5" />
+                      Instamart Healthy Essentials
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-1">Superfoods, organic produce, and health items delivered in 15 mins.</p>
+                  </div>
+                  <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1 shrink-0">
+                    ⚡ Powered by Swiggy
+                  </span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">

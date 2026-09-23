@@ -187,9 +187,14 @@ function AIMessageBubble({
           <div className="p-5 space-y-4 text-left">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
-                  Recommended Meal
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
+                    Recommended Meal
+                  </span>
+                  <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
+                    ⚡ Powered by Swiggy
+                  </span>
+                </div>
                 <h3 className="text-base font-bold text-foreground mt-2">{parsed.recommendation.mealTitle}</h3>
               </div>
               <div className="flex gap-2 items-center">
@@ -278,9 +283,14 @@ function AIMessageBubble({
       {parsed?.groceryPlan && parsed.groceryPlan.length > 0 && (
         <Card className="border border-emerald-100 dark:border-emerald-900 shadow-md rounded-2xl overflow-hidden">
           <div className="p-5 space-y-4 text-left">
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
-              AI Grocery Plan
-            </span>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
+                AI Grocery Plan
+              </span>
+              <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
+                ⚡ Powered by Swiggy
+              </span>
+            </div>
             <div className="space-y-4 pt-1">
               {Object.entries(
                 parsed.groceryPlan.reduce<Record<string, GroceryItem[]>>((acc, item) => {

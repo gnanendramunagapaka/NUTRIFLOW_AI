@@ -146,8 +146,15 @@ export default function Discover() {
     <Layout>
       <div className="container mx-auto p-4 md:p-8 space-y-8 pb-24">
         <header className="space-y-4">
-          <h1 className="text-3xl font-extrabold tracking-tight">Discover Healthy Meals</h1>
-          <p className="text-muted-foreground text-sm -mt-2">Filter and search across partner restaurants serving certified clean recipes.</p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-3xl font-extrabold tracking-tight">Discover Healthy Meals</h1>
+              <p className="text-muted-foreground text-sm -mt-1">Filter and search across partner restaurants serving certified clean recipes.</p>
+            </div>
+            <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1 shrink-0">
+              ⚡ Powered by Swiggy
+            </span>
+          </div>
           <div className="relative max-w-xl">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input 

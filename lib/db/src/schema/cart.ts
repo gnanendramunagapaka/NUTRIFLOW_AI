@@ -1,11 +1,11 @@
-import { pgTable, text, serial, timestamp, integer, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, uuid, real, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { userProfilesTable } from "./profile";
 
 export const cartItemsTable = pgTable("cart_items", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => userProfilesTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => userProfilesTable.id, { onDelete: "cascade" }),
   itemId: text("item_id").notNull(),
   name: text("name").notNull(),
   price: real("price").notNull(),

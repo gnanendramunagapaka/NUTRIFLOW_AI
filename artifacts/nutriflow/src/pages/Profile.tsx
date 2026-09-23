@@ -230,10 +230,15 @@ export default function Profile() {
                 {/* Historic Orders */}
                 <Card className="rounded-3xl border-border/60 shadow-2xs">
                   <CardHeader>
-                    <CardTitle className="text-lg font-bold flex items-center gap-2">
-                      <Calendar className="h-5 w-5 text-emerald-600" />
-                      Order History & Ratings
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg font-bold flex items-center gap-2">
+                        <Calendar className="h-5 w-5 text-emerald-600" />
+                        Order History & Ratings
+                      </CardTitle>
+                      <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
+                        ⚡ Powered by Swiggy
+                      </span>
+                    </div>
                     <CardDescription className="text-xs">Past meals and ingredients ordered via Swiggy integrations.</CardDescription>
                   </CardHeader>
                   <CardContent className="p-0 divide-y divide-border/40 text-left">

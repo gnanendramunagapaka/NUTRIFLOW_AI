@@ -7,10 +7,11 @@ const router = Router();
 // Returns the profile of the currently authenticated Supabase user.
 router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { password: _, verificationCode: __, ...profile } = req.user!;
+    const profile = req.user!;
     res.json({
       user: profile,
     });
+
   } catch (error) {
     console.error("GET /auth/me error:", error);
     res.status(500).json({ error: "Internal server error" });

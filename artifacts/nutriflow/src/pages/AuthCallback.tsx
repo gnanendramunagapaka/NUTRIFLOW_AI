@@ -9,7 +9,7 @@ export default function AuthCallback() {
   const { refreshUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [error] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -21,34 +21,105 @@ export default function AuthCallback() {
         const urlParams = new URLSearchParams(window.location.search);
         const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
-        // 1. Check for incoming Swiggy OAuth tokens / authorization codes
-        const swiggyError = urlParams.get("error") || hashParams.get("error");
+        // ─── 1. Check for Swiggy OAuth PKCE callback (code + state in query params) ───
         const swiggyCode = urlParams.get("code");
-        const swiggyToken = urlParams.get("access_token") || hashParams.get("access_token") || urlParams.get("swiggy_token");
+        const swiggyState = urlParams.get("state");
+        const swiggyError = urlParams.get("error");
 
-        if (swiggyError) {
-          console.warn("[AUTH CALLBACK] Swiggy OAuth error reported:", swiggyError);
-          toast({
-            title: "Swiggy Authorization Notice",
-            description: `Swiggy OAuth returned: ${swiggyError}`,
-            variant: "destructive",
-          });
+        // Detect if this is a Swiggy callback by checking for state that matches our stored PKCE state
+        const storedState = sessionStorage.getItem("swiggy_pkce_state");
+        const isSwiggyCallback = swiggyState && storedState && swiggyState === storedState;
+
+        if (isSwiggyCallback) {
+          console.log("[AUTH CALLBACK] Detected Swiggy OAuth callback");
+
+          if (swiggyError) {
+            console.warn("[AUTH CALLBACK] Swiggy OAuth error:", swiggyError);
+            toast({
+              title: "Swiggy Authorization Failed",
+              description: `Swiggy returned an error: ${swiggyError}`,
+              variant: "destructive",
+            });
+            // Clean up PKCE storage
+            sessionStorage.removeItem("swiggy_pkce_state");
+            sessionStorage.removeItem("swiggy_pkce_verifier");
+            setLocation("/profile");
+            return;
+          }
+
+          if (swiggyCode) {
+            const codeVerifier = sessionStorage.getItem("swiggy_pkce_verifier");
+            if (!codeVerifier) {
+              console.error("[AUTH CALLBACK] Missing PKCE code_verifier in sessionStorage");
+              toast({
+                title: "Authorization Error",
+                description: "PKCE verification data not found. Please try connecting Swiggy again.",
+                variant: "destructive",
+              });
+              setLocation("/profile");
+              return;
+            }
+
+            try {
+              // Retrieve user's Supabase session to link Swiggy token to their profile
+              const { data: { session } } = await supabase.auth.getSession();
+              const authHeaders: Record<string, string> = { "Content-Type": "application/json" };
+              if (session?.access_token) {
+                authHeaders["Authorization"] = `Bearer ${session.access_token}`;
+              }
+
+              const redirectUri = window.location.origin + "/auth/callback";
+
+              // Exchange code + verifier via backend
+              const response = await fetch("/api/swiggy/oauth/callback", {
+                method: "POST",
+                headers: authHeaders,
+                body: JSON.stringify({
+                  code: swiggyCode,
+                  code_verifier: codeVerifier,
+                  redirect_uri: redirectUri,
+                }),
+              });
+
+              const result = await response.json();
+
+              if (response.ok && !result.error && result.connected) {
+                toast({
+                  title: "Swiggy Connected! ⚡",
+                  description: "Your Swiggy account has been linked successfully.",
+                });
+              } else {
+                console.warn("[AUTH CALLBACK] Swiggy token exchange failed:", result);
+                toast({
+                  title: "Swiggy Connection Issue",
+                  description: result.error || "Token exchange failed. Please try connecting again.",
+                  variant: "destructive",
+                });
+              }
+            } catch (err: any) {
+              console.error("[AUTH CALLBACK] Swiggy token exchange error:", err);
+              toast({
+                title: "Connection Error",
+                description: "Failed to complete Swiggy authorization. Please try again.",
+                variant: "destructive",
+              });
+            } finally {
+              // Always clean up PKCE storage
+              sessionStorage.removeItem("swiggy_pkce_state");
+              sessionStorage.removeItem("swiggy_pkce_verifier");
+            }
+          }
+
+          // Redirect to return URL or profile
+          const returnTo = sessionStorage.getItem("swiggy_auth_return_to");
+          sessionStorage.removeItem("swiggy_auth_return_to");
+          setLocation(returnTo || "/profile");
+          return;
         }
 
-        if (swiggyToken || swiggyCode) {
-          console.log("[AUTH CALLBACK] Storing Swiggy OAuth credentials...");
-          const tokenToStore = swiggyToken || swiggyCode || "";
-          localStorage.setItem("swiggy_access_token", tokenToStore);
-          localStorage.setItem("swiggy_oauth_connected", "true");
-
-          toast({
-            title: "Swiggy Connected! ⚡",
-            description: "Your Swiggy account has been linked successfully.",
-          });
-        }
-
+        // ─── 2. Supabase Auth Callback (GoTrue session recovery) ───
         const recoveryPromise = (async () => {
-          // 2. Get Supabase session. GoTrue client automatically exchanges the code/hash for a session.
+          // GoTrue client automatically exchanges the code/hash for a session
           const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
           if (sessionErr) {
             console.warn("[AUTH CALLBACK] Error getting session initially:", sessionErr.message);
@@ -66,10 +137,6 @@ export default function AuthCallback() {
           }
 
           if (!activeSession) {
-            // If Swiggy OAuth was processed without an active Supabase session, proceed gracefully
-            if (swiggyToken || swiggyCode) {
-              return { activeSession: null, profile: null };
-            }
             throw new Error("No active session found.");
           }
 
@@ -93,7 +160,7 @@ export default function AuthCallback() {
         })();
 
         const timeoutPromise = new Promise<{ activeSession: any; profile: any }>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 5000)
+          setTimeout(() => reject(new Error("Timeout")), 8000)
         );
 
         const { profile, activeSession } = await Promise.race([recoveryPromise, timeoutPromise]);
@@ -106,28 +173,24 @@ export default function AuthCallback() {
           description: "Your session has been restored successfully.",
         });
 
-        // 3. Redirect based on return-to or onboarding state
-        const returnTo = localStorage.getItem("swiggy_auth_return_to");
-        if (returnTo) {
-          localStorage.removeItem("swiggy_auth_return_to");
-          setLocation(returnTo);
-          return;
-        }
-
-        const onboarded = profile?.onboarding_completed ?? (activeSession ? false : true);
+        // Redirect based on onboarding state
+        const onboarded = profile?.onboarding_completed ?? false;
         setLocation(onboarded ? "/dashboard" : "/onboarding");
       } catch (err: any) {
         console.error("[AUTH CALLBACK] Callback recovery failed:", err);
         if (!active) return;
 
+        setError(err.message || "Authentication failed");
         toast({
-          title: "Callback Restore Delayed",
-          description: "We are redirecting you to check your verification state manually.",
+          title: "Authentication Issue",
+          description: "We couldn't verify your session. Redirecting to login...",
           variant: "destructive",
         });
 
-        // Redirect back to verify email with recovery flag
-        setLocation("/verify-email?recovery=true");
+        // Redirect back to login after a brief delay
+        setTimeout(() => {
+          if (active) setLocation("/login");
+        }, 2000);
       }
     }
 

@@ -11,14 +11,23 @@ declare global {
   }
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("FATAL: Supabase URL and Anon Key must be provided in environment variables.");
+function getSupabaseClient() {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error("FATAL: Supabase URL and Anon Key must be provided in environment variables.");
+  }
+  return createClient(supabaseUrl, supabaseAnonKey);
 }
 
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const supabase = (supabaseUrl && supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : (new Proxy({} as ReturnType<typeof createClient>, {
+      get() {
+        return getSupabaseClient();
+      },
+    }));
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -42,26 +51,33 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     }
 
     const email = supabaseUser.email.toLowerCase().trim();
-    const isEmailVerified = !!supabaseUser.email_confirmed_at;
 
     // 2. Fetch or auto-provision local database profile
     let [user] = await db
       .select()
       .from(userProfilesTable)
-      .where(eq(userProfilesTable.email, email))
+      .where(eq(userProfilesTable.id, supabaseUser.id))
       .limit(1);
 
     if (!user) {
-      // Auto-provision user profile
+      // Fallback query by email if created prior
+      [user] = await db
+        .select()
+        .from(userProfilesTable)
+        .where(eq(userProfilesTable.email, email))
+        .limit(1);
+    }
+
+    if (!user) {
+      // Auto-provision user profile with Supabase user UUID
       const defaultName = supabaseUser.user_metadata?.name || email.split("@")[0].charAt(0).toUpperCase() + email.split("@")[0].slice(1);
       
       const [created] = await db
         .insert(userProfilesTable)
         .values({
+          id: supabaseUser.id,
           name: defaultName,
           email: email,
-          password: "supabase_auth", // Dummy password placeholder to satisfy db constraints
-          isEmailVerified,
           onboardingCompleted: false,
           goal: "Stay Healthy",
           dietaryPreferences: [],
@@ -71,18 +87,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
         })
         .returning();
       user = created;
-      console.log(`[Auth] Auto-provisioned user profile in database: ${email}`);
-    } else {
-      // Update email verified status if it changed
-      if (user.isEmailVerified !== isEmailVerified) {
-        const [updated] = await db
-          .update(userProfilesTable)
-          .set({ isEmailVerified })
-          .where(eq(userProfilesTable.id, user.id))
-          .returning();
-        user = updated;
-        console.log(`[Auth] Updated verification status for user in database: ${email}`);
-      }
+      console.log(`[Auth] Auto-provisioned user profile in database: ${email} (${user.id})`);
     }
 
     req.user = user;
@@ -92,3 +97,4 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     next(error);
   }
 }
+

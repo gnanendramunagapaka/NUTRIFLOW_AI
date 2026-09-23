@@ -146,8 +146,13 @@ export default function OrderConfirmation() {
             <p className="text-sm text-muted-foreground mt-1">
               Order ID: <span className="font-bold text-foreground">{order.orderId}</span>
             </p>
-            <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1 rounded-full border border-emerald-100 dark:border-emerald-900/30">
-              Fulfilled via Swiggy Delivery
+            <div className="mt-2 inline-flex flex-wrap items-center justify-center gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/20 px-3 py-1 rounded-full border border-emerald-100 dark:border-emerald-900/30">
+                Fulfilled via Swiggy Delivery
+              </span>
+              <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
+                ⚡ Powered by Swiggy
+              </span>
             </div>
           </div>
         </div>

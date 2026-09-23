@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, real, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, real, boolean, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { userProfilesTable } from "./profile";
@@ -35,7 +35,8 @@ export const mealsTable = pgTable("meals", {
 
 export const savedMealsTable = pgTable("saved_meals", {
   id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().references(() => userProfilesTable.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => userProfilesTable.id, { onDelete: "cascade" }),
+
   mealId: integer("meal_id").references(() => mealsTable.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),

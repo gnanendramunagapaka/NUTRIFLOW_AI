@@ -9,7 +9,11 @@
   },
   "private": true,
   "devDependencies": {
+    "@types/node": "catalog:",
+    "@vercel/node": "^5.1.8",
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"
   }
 }
+
+

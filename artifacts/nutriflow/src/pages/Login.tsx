@@ -177,17 +177,14 @@ export default function Login() {
       } else if (provider === "swiggy") {
         // Trigger the official Swiggy MCP OAuth flow
         try {
-          initiateSwiggyOAuth();
-        } catch (e) {
-          console.warn("Failed to start Swiggy OAuth, falling back to guest connect", e);
-          try {
-            localStorage.setItem("swiggy_mcp_connected", "true");
-            localStorage.setItem("nutriflow_guest_session", "true");
-            await connectSwiggyAccount();
-          } catch {
-            // ignore
-          }
-          if (typeof window !== "undefined") window.location.href = "/dashboard";
+          await initiateSwiggyOAuth("/dashboard");
+        } catch (e: any) {
+          console.error("Failed to start Swiggy OAuth:", e);
+          toast({
+            title: "Swiggy Connection Failed",
+            description: e?.message || "Could not initialize Swiggy OAuth flow.",
+            variant: "destructive",
+          });
         }
       } else {
         // Fallback mock sign-in for Apple SSO

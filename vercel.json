@@ -1,9 +1,10 @@
 {
-  "buildCommand": "cd artifacts/nutriflow && npm install && npx vite build --config vite.config.ts",
+  "buildCommand": "pnpm --filter @workspace/nutriflow run build",
   "outputDirectory": "artifacts/nutriflow/dist/public",
-  "installCommand": "npm install",
+  "installCommand": "pnpm install",
   "framework": null,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }

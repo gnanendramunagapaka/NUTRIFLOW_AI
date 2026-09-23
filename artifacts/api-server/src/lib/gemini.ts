@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const geminiApiKey = process.env.GEMINI_API_KEY || "AIzaSyARGxuqrzLJsVqNpbtPUm7Op4NiqA0pfmA";
+const geminiApiKey = process.env.GEMINI_API_KEY || "";
 
 if (!geminiApiKey) {
   console.warn("[Gemini] GEMINI_API_KEY is missing — AI features will use fallback mode.");

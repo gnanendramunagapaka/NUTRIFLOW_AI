@@ -4,3 +4,4 @@ export * from "./meals";
 export * from "./grocery";
 export * from "./profile";
 export * from "./cart";
+export * from "./swiggy";

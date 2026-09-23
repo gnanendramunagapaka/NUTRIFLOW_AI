@@ -20,6 +20,11 @@ export default function Landing() {
     return "Go to Dashboard";
   };
 
+  const exploreHref = () => {
+    if (!user) return "/login";
+    return "/discover";
+  };
+
   return (
     <Layout>
       <div className="flex flex-col min-h-screen">
@@ -42,7 +47,7 @@ export default function Landing() {
                   {getStartedText()}
                 </Button>
               </Link>
-              <Link href="/discover">
+              <Link href={exploreHref()}>
                 <Button size="lg" variant="outline" className="w-full sm:w-auto text-lg px-8 py-6 rounded-full bg-background">
                   Explore Meals
                 </Button>
