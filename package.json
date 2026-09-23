@@ -10,7 +10,9 @@
   "private": true,
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/express-serve-static-core": "^5.1.1",
     "@types/node": "catalog:",
+
     "@vercel/node": "^5.1.8",
     "prettier": "^3.8.3",
     "typescript": "~5.9.3"
