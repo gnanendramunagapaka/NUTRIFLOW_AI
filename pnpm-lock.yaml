@@ -156,6 +156,9 @@ importers:
       '@vercel/node':
         specifier: ^5.1.8
         version: 5.10.2(rollup@4.60.3)
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.20.0)(pg@8.20.0)
       prettier:
         specifier: ^3.8.3
         version: 3.8.3
@@ -629,9 +632,6 @@ importers:
 
   lib/db:
     dependencies:
-      drizzle-orm:
-        specifier: 'catalog:'
-        version: 0.45.2(@types/pg@8.20.0)(pg@8.20.0)
       drizzle-zod:
         specifier: ^0.8.3
         version: 0.8.3(drizzle-orm@0.45.2(@types/pg@8.20.0)(pg@8.20.0))(zod@3.25.76)
