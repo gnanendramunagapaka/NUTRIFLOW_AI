@@ -67,6 +67,10 @@ catalog:
 
 autoInstallPeers: false
 
+publicHoistPattern:
+  - '@supabase/*'
+
+
 overrides:
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
