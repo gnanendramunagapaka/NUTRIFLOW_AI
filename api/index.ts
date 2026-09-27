@@ -1,4 +1,5 @@
 import { register } from "node:module";
+import { pathToFileURL } from "node:url";
 
 const hookCode = `
 import fs from 'node:fs';
@@ -13,6 +14,12 @@ export async function resolve(specifier, context, nextResolve) {
       const target = path.resolve(parentDir, specifier);
       if (fs.existsSync(target) && fs.statSync(target).isFile()) {
         return nextResolve(specifier, context);
+      }
+      if (target.endsWith('.js') && !fs.existsSync(target)) {
+        const tsVariant = target.slice(0, -3) + '.ts';
+        if (fs.existsSync(tsVariant)) {
+          return nextResolve(pathToFileURL(tsVariant).href, context);
+        }
       }
       if (fs.existsSync(target + '.js')) {
         return nextResolve(pathToFileURL(target + '.js').href, context);
@@ -34,8 +41,24 @@ export async function resolve(specifier, context, nextResolve) {
 }
 `;
 
-register(`data:text/javascript,${encodeURIComponent(hookCode)}`, import.meta.url);
+register(`data:text/javascript,${encodeURIComponent(hookCode)}`, pathToFileURL(__filename).href);
 
-const app = (await import("../artifacts/api-server/src/app.js")).default;
+let appPromise: Promise<any> | null = null;
 
-export default app;
+function getApp(): Promise<any> {
+  if (!appPromise) {
+    const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
+    appPromise = dynamicImport("../artifacts/api-server/src/app.js").then((mod: any) => mod.default);
+  }
+  return appPromise;
+}
+
+async function handler(req: any, res: any) {
+  const app = await getApp();
+  return app(req, res);
+}
+
+handler.default = handler;
+
+export = handler;
+
