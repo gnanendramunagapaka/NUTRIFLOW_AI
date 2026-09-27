@@ -1,5 +1,5 @@
-import { register } from "node:module";
-import { pathToFileURL } from "node:url";
+const { register } = require("node:module");
+const { pathToFileURL } = require("node:url");
 
 const hookCode = `
 import fs from 'node:fs';
@@ -47,8 +47,7 @@ let appPromise: Promise<any> | null = null;
 
 function getApp(): Promise<any> {
   if (!appPromise) {
-    const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<any>;
-    appPromise = dynamicImport("../artifacts/api-server/src/app.js").then((mod: any) => mod.default);
+    appPromise = import("../artifacts/api-server/src/app.js").then((mod: any) => mod.default);
   }
   return appPromise;
 }
@@ -58,7 +57,7 @@ async function handler(req: any, res: any) {
   return app(req, res);
 }
 
-handler.default = handler;
+module.exports = handler;
+module.exports.default = handler;
 
-export = handler;
 
