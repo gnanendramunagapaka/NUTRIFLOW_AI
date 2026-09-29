@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { db, userProfilesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { createClient } from "@supabase/supabase-js";
+import { verifySessionToken, SESSION_COOKIE_NAME } from "../lib/session";
 
 declare global {
   namespace Express {
@@ -11,90 +11,51 @@ declare global {
   }
 }
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-
-function getSupabaseClient() {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("FATAL: Supabase URL and Anon Key must be provided in environment variables.");
-  }
-  return createClient(supabaseUrl, supabaseAnonKey);
-}
-
-const supabase = (supabaseUrl && supabaseAnonKey)
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : (new Proxy({} as ReturnType<typeof createClient>, {
-      get() {
-        return getSupabaseClient();
-      },
-    }));
-
+/**
+ * Authentication middleware that verifies the server-managed NutriFlow session.
+ * Reads the session token from HttpOnly cookie (or Bearer header) and strictly resolves
+ * the database user profile matching the session's internal userId UUID.
+ */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      res.status(401).json({ error: "Unauthorized: Missing or invalid token" });
-      return;
-    }
-
-    const token = authHeader.substring(7);
+    // 1. Resolve session token from HttpOnly cookie (primary) or Authorization Bearer header (fallback)
+    let token = req.cookies?.[SESSION_COOKIE_NAME];
+    
     if (!token) {
-      res.status(401).json({ error: "Unauthorized: Token not provided" });
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.substring(7).trim();
+      }
+    }
+
+    if (!token) {
+      res.status(401).json({ error: "Unauthorized: Missing or invalid session" });
       return;
     }
 
-    // 1. Verify token with Supabase Auth API
-    const { data: { user: supabaseUser }, error } = await supabase.auth.getUser(token);
-    if (error || !supabaseUser || !supabaseUser.email) {
+    // 2. Cryptographically verify NutriFlow session signature and expiration
+    const payload = verifySessionToken(token);
+    if (!payload || !payload.userId) {
       res.status(401).json({ error: "Unauthorized: Invalid or expired session" });
       return;
     }
 
-    const email = supabaseUser.email.toLowerCase().trim();
-
-    // 2. Fetch or auto-provision local database profile
-    let [user] = await db
+    // 3. Resolve user profile strictly by internal UUID from verified session token
+    const [user] = await db
       .select()
       .from(userProfilesTable)
-      .where(eq(userProfilesTable.id, supabaseUser.id))
+      .where(eq(userProfilesTable.id, payload.userId))
       .limit(1);
 
     if (!user) {
-      // Fallback query by email if created prior
-      [user] = await db
-        .select()
-        .from(userProfilesTable)
-        .where(eq(userProfilesTable.email, email))
-        .limit(1);
-    }
-
-    if (!user) {
-      // Auto-provision user profile with Supabase user UUID
-      const defaultName = supabaseUser.user_metadata?.name || email.split("@")[0].charAt(0).toUpperCase() + email.split("@")[0].slice(1);
-      
-      const [created] = await db
-        .insert(userProfilesTable)
-        .values({
-          id: supabaseUser.id,
-          name: defaultName,
-          email: email,
-          onboardingCompleted: false,
-          goal: "Stay Healthy",
-          dietaryPreferences: [],
-          allergies: [],
-          wellnessScore: 72,
-          streak: 0,
-        })
-        .returning();
-      user = created;
-      console.log(`[Auth] Auto-provisioned user profile in database: ${email} (${user.id})`);
+      res.status(401).json({ error: "Unauthorized: User profile not found" });
+      return;
     }
 
     req.user = user;
     next();
   } catch (error) {
-    console.error("Auth middleware error:", error);
-    next(error);
+    console.error("[Auth Middleware] Session verification error:", error);
+    res.status(500).json({ error: "Authentication verification failed" });
   }
 }
-

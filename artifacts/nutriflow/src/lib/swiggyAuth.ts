@@ -10,7 +10,6 @@
  */
 
 import { generatePKCE, storePKCE } from "./pkce";
-import { supabase } from "./supabaseClient";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -100,19 +99,7 @@ export async function initiateSwiggyOAuth(returnTo?: string): Promise<void> {
 
 export const connectSwiggyAccount = initiateSwiggyOAuth;
 
-// ─── Connection Status (via backend API) ──────────────────────────────────────
-
-async function getAuthHeader(): Promise<Record<string, string>> {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      return { Authorization: `Bearer ${session.access_token}` };
-    }
-  } catch {
-    // ignore
-  }
-  return {};
-}
+// ─── Connection Status (via backend API with cookie credentials) ──────────────
 
 /**
  * Check Swiggy connection status from the backend for the current user.
@@ -121,17 +108,14 @@ async function getAuthHeader(): Promise<Record<string, string>> {
 export async function getSwiggyConnectionStatus(): Promise<{
   connected: boolean;
   expiresAt: string | null;
+  expired?: boolean;
 }> {
   try {
-    const authHeaders = await getAuthHeader();
-    if (!authHeaders.Authorization) {
-      return { connected: false, expiresAt: null };
-    }
-
     const response = await fetch("/api/swiggy/status", {
       headers: {
-        ...authHeaders,
+        Accept: "application/json",
       },
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -144,20 +128,13 @@ export async function getSwiggyConnectionStatus(): Promise<{
 }
 
 /**
- * Disconnect Swiggy account via backend (revokes user's stored token in DB).
+ * Disconnect Swiggy account via backend (revokes user's stored token in DB and clears session cookie).
  */
 export async function disconnectSwiggy(): Promise<boolean> {
   try {
-    const authHeaders = await getAuthHeader();
-    if (!authHeaders.Authorization) {
-      return false;
-    }
-
     const response = await fetch("/api/swiggy/disconnect", {
       method: "POST",
-      headers: {
-        ...authHeaders,
-      },
+      credentials: "include",
     });
     return response.ok;
   } catch {

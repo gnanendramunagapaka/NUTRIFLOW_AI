@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Send, Plus, MessageSquare, Flame, Dumbbell, Heart, Utensils, Check, Loader2, ShoppingCart, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabaseClient";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { MOCK_PREVIOUS_CHATS } from "@/lib/mockData";
@@ -368,25 +367,23 @@ export default function Chat() {
 
   const loadConversations = async () => {
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) {
+      if (!user) {
         setConversations([]);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("ai_conversations")
-        .select("*")
-        .eq("user_id", sbUser.id)
-        .order("created_at", { ascending: false });
+      const res = await fetch("/api/openai/conversations", {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
 
-      if (error) {
-        console.warn("[Chat] Conversations fetch error (non-critical):", error.message);
+      if (!res.ok) {
         setConversations([]);
         return;
       }
 
-      setConversations(data || []);
+      const data = await res.json();
+      setConversations(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn("[Chat] loadConversations failed (non-critical):", e);
       setConversations([]);
@@ -406,19 +403,18 @@ export default function Chat() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("ai_messages")
-        .select("*")
-        .eq("conversation_id", convId)
-        .order("created_at", { ascending: true });
+      const res = await fetch(`/api/openai/conversations/${encodeURIComponent(convId)}/messages`, {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
 
-      if (error) {
-        console.warn("[Chat] Messages fetch error (non-critical):", error.message);
+      if (!res.ok) {
         setMessages([]);
         return;
       }
 
-      setMessages(data || []);
+      const data = await res.json();
+      setMessages(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn("[Chat] loadMessages failed (non-critical):", e);
       setMessages([]);
@@ -447,24 +443,21 @@ export default function Chat() {
 
   const handleCreate = async () => {
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
-
-      const { data, error } = await supabase
-        .from("ai_conversations")
-        .insert({
+      const res = await fetch("/api/openai/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
           title: "New Conversation",
-          user_id: sbUser.id
-        })
-        .select()
-        .single();
+        }),
+      });
 
-      if (error) throw error;
-      
+      if (!res.ok) throw new Error("Failed to create conversation");
+      const data = await res.json();
       setConversations(old => [data, ...old]);
       setActiveId(data.id);
     } catch (e) {
-      console.error("Failed to create conversation in Supabase:", e);
+      console.error("Failed to create conversation:", e);
       toast({ title: "Failed to create conversation", variant: "destructive" });
     }
   };
@@ -477,23 +470,21 @@ export default function Chat() {
     // Create new conversation if none is active
     if (!targetConvId) {
       try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (!sbUser) return;
-        const { data, error } = await supabase
-          .from("ai_conversations")
-          .insert({
-            title: promptText.length > 25 ? promptText.slice(0, 25) + "..." : promptText,
-            user_id: sbUser.id
-          })
-          .select()
-          .single();
+        const title = promptText.length > 25 ? promptText.slice(0, 25) + "..." : promptText;
+        const res = await fetch("/api/openai/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ title }),
+        });
 
-        if (error) throw error;
+        if (!res.ok) throw new Error("Failed to initialize conversation");
+        const data = await res.json();
         setConversations(old => [data, ...old]);
         targetConvId = data.id;
         setActiveId(data.id);
       } catch (e) {
-        console.error(e);
+        console.error("Failed to create conversation for prompt:", e);
         return;
       }
     }
@@ -518,7 +509,7 @@ export default function Chat() {
       id: Math.random().toString(),
       role: "user",
       content: userMessage,
-      conversation_id: activeId
+      conversationId: activeId
     };
 
     try {
@@ -527,38 +518,20 @@ export default function Chat() {
       // If active conversation is a mock, convert it to a database conversation first
       let currentConvId = activeId;
       if (activeId.startsWith("c-")) {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (!sbUser) return;
-        
-        const { data, error } = await supabase
-          .from("ai_conversations")
-          .insert({
-            title: userMessage.length > 25 ? userMessage.slice(0, 25) + "..." : userMessage,
-            user_id: sbUser.id
-          })
-          .select()
-          .single();
+        const title = userMessage.length > 25 ? userMessage.slice(0, 25) + "..." : userMessage;
+        const res = await fetch("/api/openai/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ title }),
+        });
 
-        if (error) throw error;
-        setConversations(old => [data, ...old.filter(c => c.id !== activeId)]);
-        currentConvId = data.id;
-        setActiveId(data.id);
+        if (!res.ok) throw new Error("Failed to initialize conversation");
+        const conv = await res.json();
+        setConversations(old => [conv, ...old.filter(c => c.id !== activeId)]);
+        currentConvId = conv.id;
+        setActiveId(conv.id);
       }
-
-      const { data: userMsg, error: userErr } = await supabase
-        .from("ai_messages")
-        .insert({
-          conversation_id: currentConvId,
-          role: "user",
-          content: userMessage
-        })
-        .select()
-        .single();
-
-      if (userErr) throw userErr;
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
 
       const chatHistoryContext = messages.slice(-10).map((m: any) => ({
         role: m.role,
@@ -569,8 +542,8 @@ export default function Chat() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: "include",
         body: JSON.stringify({
           content: userMessage,
           history: chatHistoryContext
@@ -618,23 +591,8 @@ export default function Chat() {
 
       setIsFallback(wasFallback);
 
-      const { data: assistantMsgRow, error: assistantErr } = await supabase
-        .from("ai_messages")
-        .insert({
-          conversation_id: currentConvId,
-          role: "assistant",
-          content: assistantMsg
-        })
-        .select()
-        .single();
-
-      if (assistantErr) throw assistantErr;
-
-      setMessages(old => [
-        ...(old || []).filter((m: any) => m.id !== optimisticUserMsg.id),
-        userMsg,
-        assistantMsgRow
-      ]);
+      // Reload persisted messages from backend
+      await loadMessages(currentConvId);
 
       if (wasFallback) {
         toast({
@@ -654,36 +612,16 @@ export default function Chat() {
 
   const addGroceries = async (items: GroceryItem[]) => {
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
+      const res = await fetch("/api/grocery/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ items }),
+      });
 
-      const weekOf = new Date().toISOString().split("T")[0];
-      const { data: newPlan, error: planErr } = await supabase
-        .from("grocery_plans")
-        .insert({
-          user_id: sbUser.id,
-          week_of: weekOf,
-        })
-        .select()
-        .single();
-
-      if (planErr) throw planErr;
-
-      const itemsToInsert = items.map((item: any) => ({
-        plan_id: newPlan.id,
-        name: item.name,
-        category: item.category || "Pantry",
-        quantity: item.quantity || "1",
-        unit: item.unit || "unit",
-        is_checked: false,
-        nutrition_note: item.nutritionNote || null,
-      }));
-
-      if (itemsToInsert.length > 0) {
-        const { error: itemsErr } = await supabase
-          .from("grocery_plan_items")
-          .insert(itemsToInsert);
-        if (itemsErr) throw itemsErr;
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to add items to grocery list");
       }
 
       toast({ title: "✅ Items added to your grocery list!" });

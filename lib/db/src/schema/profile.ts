@@ -4,8 +4,9 @@ import { z } from "zod/v4";
 
 export const userProfilesTable = pgTable("user_profiles", {
   id: uuid("id").primaryKey(),
+  swiggyUserId: text("swiggy_user_id").unique(),
   name: text("name").notNull(),
-  email: text("email").unique().notNull(),
+  email: text("email").unique(),
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   age: integer("age"),
   weight: real("weight"),

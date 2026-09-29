@@ -7,7 +7,6 @@ import { Sparkles, Calendar, CheckCircle2, ShoppingCart, Clock, ShieldAlert } fr
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useCart } from "@/hooks/use-cart";
-import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/hooks/use-auth";
 import { MOCK_INSTAMART_GROCERIES } from "@/lib/mockData";
 
@@ -23,45 +22,28 @@ export default function Grocery() {
   const loadGroceryList = async () => {
     setIsLoading(true);
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) {
-        setList(null);
-        return;
-      }
-
-      // Fetch most recent grocery plan for user
-      const { data: plans, error: planErr } = await supabase
-        .from("grocery_plans")
-        .select("*")
-        .eq("user_id", sbUser.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
-
-      if (planErr) {
-        console.warn("[Grocery] grocery_plans fetch error (non-critical):", planErr.message);
+      if (!user) {
         loadDefaultChecklist();
         return;
       }
 
-      if (!plans || plans.length === 0) {
+      const res = await fetch("/api/grocery/list", {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
+
+      if (!res.ok) {
         loadDefaultChecklist();
         return;
       }
 
-      const plan = plans[0];
-
-      // Fetch grocery items for this plan
-      const { data: items, error: itemsErr } = await supabase
-        .from("grocery_plan_items")
-        .select("*")
-        .eq("plan_id", plan.id)
-        .order("created_at", { ascending: true });
-
-      if (itemsErr) {
-        console.warn("[Grocery] grocery_plan_items fetch error (non-critical):", itemsErr.message);
+      const data = await res.json();
+      if (!data || !data.items || data.items.length === 0) {
+        loadDefaultChecklist();
+        return;
       }
 
-      const mappedItems = (items || []).map((row: any) => {
+      const mappedItems = (data.items || []).map((row: any) => {
         const mockMatch = MOCK_INSTAMART_GROCERIES.find(m => m.name.toLowerCase().includes(row.name.toLowerCase()));
         return {
           id: row.id,
@@ -76,8 +58,8 @@ export default function Grocery() {
       });
 
       setList({
-        id: plan.id,
-        weekOf: plan.week_of || new Date().toISOString().split("T")[0],
+        id: data.id,
+        weekOf: data.weekOf || new Date().toISOString().split("T")[0],
         items: mappedItems,
         totalItems: mappedItems.length,
         checkedItems: mappedItems.filter((i: any) => i.isChecked).length,
@@ -133,11 +115,12 @@ export default function Grocery() {
     if (String(id).startsWith("default-")) return; // skip DB write for mock defaults
 
     try {
-      const { error } = await supabase
-        .from("grocery_plan_items")
-        .update({ is_checked: !targetItem.isChecked })
-        .eq("id", id);
-      if (error) throw error;
+      await fetch(`/api/grocery/item/${encodeURIComponent(String(id))}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ isChecked: !targetItem.isChecked }),
+      });
     } catch (e) {
       console.error("Failed to toggle grocery check state:", e);
     }
@@ -146,9 +129,6 @@ export default function Grocery() {
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      
       const goal = user?.goal || "Stay Healthy";
       const dietaryPreferences = user?.dietaryPreferences || [];
       const budget = user?.budget ? String(user.budget) : undefined;
@@ -157,8 +137,8 @@ export default function Grocery() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
+        credentials: "include",
         body: JSON.stringify({
           goal,
           dietaryPreferences,
@@ -167,40 +147,6 @@ export default function Grocery() {
       });
 
       if (!res.ok) throw new Error("Failed to generate plan");
-
-      const generated = await res.json();
-      
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
-
-      const weekOf = new Date().toISOString().split("T")[0];
-      const { data: newPlan, error: planErr } = await supabase
-        .from("grocery_plans")
-        .insert({
-          user_id: sbUser.id,
-          week_of: weekOf,
-        })
-        .select()
-        .single();
-
-      if (planErr) throw planErr;
-
-      const itemsToInsert = (generated.items || []).map((item: any) => ({
-        plan_id: newPlan.id,
-        name: item.name,
-        category: item.category,
-        quantity: item.quantity,
-        unit: item.unit,
-        is_checked: false,
-        nutrition_note: item.nutritionNote || null,
-      }));
-
-      if (itemsToInsert.length > 0) {
-        const { error: itemsErr } = await supabase
-          .from("grocery_plan_items")
-          .insert(itemsToInsert);
-        if (itemsErr) throw itemsErr;
-      }
 
       toast({ title: "Grocery list generated!" });
       await loadGroceryList();

@@ -1,4 +1,4 @@
-import { Redirect, useLocation } from "wouter";
+import { Redirect } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -8,8 +8,7 @@ interface ProtectedRouteProps {
 
 // 1. ProtectedRoute: For standard authenticated pages (Dashboard, Chat, Grocery, Profile, etc.)
 export function ProtectedRoute({ component: Component }: ProtectedRouteProps) {
-  const { user, supabaseUser, onboarded, loading } = useAuth();
-  const [location] = useLocation();
+  const { user, onboarded, loading } = useAuth();
 
   // Show loading spinner while auth is initializing
   if (loading) {
@@ -30,11 +29,6 @@ export function ProtectedRoute({ component: Component }: ProtectedRouteProps) {
     return <Redirect to="/login" />;
   }
 
-  // Email not verified — redirect to verify email
-  if (supabaseUser && !supabaseUser.email_confirmed_at) {
-    return <Redirect to={`/verify-email?email=${encodeURIComponent(supabaseUser.email || "")}`} />;
-  }
-
   // Onboarding not completed — redirect to onboarding
   if (!onboarded) {
     return <Redirect to="/onboarding" />;
@@ -45,7 +39,7 @@ export function ProtectedRoute({ component: Component }: ProtectedRouteProps) {
 
 // 2. OnboardingRoute: For onboarding page
 export function OnboardingRoute({ component: Component }: ProtectedRouteProps) {
-  const { user, supabaseUser, onboarded, loading } = useAuth();
+  const { user, onboarded, loading } = useAuth();
 
   if (loading) {
     return (
@@ -65,11 +59,6 @@ export function OnboardingRoute({ component: Component }: ProtectedRouteProps) {
     return <Redirect to="/login" />;
   }
 
-  // Email not verified — redirect to verify email
-  if (supabaseUser && !supabaseUser.email_confirmed_at) {
-    return <Redirect to={`/verify-email?email=${encodeURIComponent(supabaseUser.email || "")}`} />;
-  }
-
   // Onboarding already completed — redirect to dashboard
   if (onboarded) {
     return <Redirect to="/dashboard" />;
@@ -77,9 +66,10 @@ export function OnboardingRoute({ component: Component }: ProtectedRouteProps) {
 
   return <Component />;
 }
-// 3. GuestRoute: For Login / Signup page
+
+// 3. GuestRoute: For Login page
 export function GuestRoute({ component: Component }: ProtectedRouteProps) {
-  const { user, supabaseUser, onboarded, loading } = useAuth();
+  const { user, onboarded, loading } = useAuth();
 
   if (loading) {
     return (
@@ -96,9 +86,6 @@ export function GuestRoute({ component: Component }: ProtectedRouteProps) {
 
   // Authenticated user — redirect appropriately instead of showing login page
   if (user && user.id !== "guest") {
-    if (supabaseUser && !supabaseUser.email_confirmed_at) {
-      return <Redirect to={`/verify-email?email=${encodeURIComponent(supabaseUser.email || "")}`} />;
-    }
     return <Redirect to={onboarded ? "/dashboard" : "/onboarding"} />;
   }
 

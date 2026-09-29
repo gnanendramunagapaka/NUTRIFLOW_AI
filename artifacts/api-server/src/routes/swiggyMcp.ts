@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../middlewares/authMiddleware";
-import { db, userSwiggyTokensTable } from "@workspace/db";
+import { db, userSwiggyTokensTable, userProfilesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
   SWIGGY_AUTH_URL,
@@ -9,6 +9,13 @@ import {
   getSwiggyClientId,
   getRedirectUri,
 } from "../lib/swiggyDcr";
+import {
+  createSessionToken,
+  extractSwiggyUserIdFromToken,
+  SESSION_COOKIE_NAME,
+  SESSION_MAX_AGE_MS,
+} from "../lib/session";
+import crypto from "node:crypto";
 
 const router = Router();
 
@@ -64,7 +71,7 @@ router.get("/swiggy/status", requireAuth, async (req: Request, res: Response): P
   }
 });
 
-// POST /api/swiggy/disconnect: Removes user's Swiggy access token
+// POST /api/swiggy/disconnect: Removes user's Swiggy access token and clears session cookie
 router.post("/swiggy/disconnect", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const userId = req.user!.id;
@@ -72,6 +79,7 @@ router.post("/swiggy/disconnect", requireAuth, async (req: Request, res: Respons
       .delete(userSwiggyTokensTable)
       .where(eq(userSwiggyTokensTable.userId, userId));
 
+    res.clearCookie(SESSION_COOKIE_NAME, { path: "/" });
     res.json({ success: true, connected: false });
   } catch (err: any) {
     console.error("[Swiggy Disconnect] Error:", err?.message ?? err);
@@ -79,7 +87,7 @@ router.post("/swiggy/disconnect", requireAuth, async (req: Request, res: Respons
   }
 });
 
-// Helper for Swiggy token exchange
+// Helper for Swiggy token exchange and session establishment
 async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   const { code, code_verifier, redirect_uri } = (req.body || {}) as {
     code?: string;
@@ -92,7 +100,6 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const userId = req.user!.id;
   const redirectUri = redirect_uri || getRedirectUri();
 
   let clientId: string;
@@ -105,6 +112,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   }
 
   try {
+    // 1. Exchange authorization code for Swiggy access token using PKCE verifier
     const swiggyRes = await fetch(SWIGGY_TOKEN_URL, {
       method: "POST",
       headers: {
@@ -142,15 +150,52 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // 2. Extract validated Swiggy user identity strictly using documented JWT 'sub' claim
+    let swiggyUserId: string;
+    try {
+      swiggyUserId = extractSwiggyUserIdFromToken(data.access_token);
+    } catch (parseErr: any) {
+      console.error("[Swiggy Token Exchange] Failed to extract identity from token:", parseErr.message);
+      res.status(502).json({ error: "Invalid Swiggy identity token" });
+      return;
+    }
+
+    // 3. Find or auto-provision persistent NutriFlow user profile mapped to this Swiggy user
+    let [user] = await db
+      .select()
+      .from(userProfilesTable)
+      .where(eq(userProfilesTable.swiggyUserId, swiggyUserId))
+      .limit(1);
+
+    if (!user) {
+      const [created] = await db
+        .insert(userProfilesTable)
+        .values({
+          id: crypto.randomUUID(),
+          swiggyUserId,
+          name: "Swiggy User",
+          email: null,
+          onboardingCompleted: false,
+          goal: "Stay Healthy",
+          dietaryPreferences: [],
+          allergies: [],
+          wellnessScore: 72,
+          streak: 0,
+        })
+        .returning();
+      user = created;
+      console.log(`[Swiggy Auth] Created new NutriFlow user for Swiggy user ${swiggyUserId} (${user.id})`);
+    }
+
+    // 4. Securely store Swiggy access token server-side strictly mapped to this internal user UUID
     // Swiggy v1 access tokens expire after 5 days (432,000s)
     const expiresInSec = data.expires_in || 432000;
     const expiresAt = new Date(Date.now() + expiresInSec * 1000);
 
-    // Save token strictly mapped to this authenticated NutriFlow user
     const [existing] = await db
       .select({ id: userSwiggyTokensTable.id })
       .from(userSwiggyTokensTable)
-      .where(eq(userSwiggyTokensTable.userId, userId))
+      .where(eq(userSwiggyTokensTable.userId, user.id))
       .limit(1);
 
     if (existing) {
@@ -166,7 +211,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
         .where(eq(userSwiggyTokensTable.id, existing.id));
     } else {
       await db.insert(userSwiggyTokensTable).values({
-        userId,
+        userId: user.id,
         accessToken: data.access_token,
         tokenType: data.token_type || "Bearer",
         scope: data.scope || "mcp:tools",
@@ -174,12 +219,35 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
       });
     }
 
-    console.log(`[Swiggy Token Exchange] Successfully stored Swiggy token for user ${userId}`);
+    console.log(`[Swiggy Token Exchange] Stored Swiggy token for user ${user.id}`);
 
-    // Return safe confirmation to browser — never expose raw access_token
+    // 5. Establish NutriFlow server-managed session via signed HttpOnly cookie
+    const sessionToken = createSessionToken({
+      userId: user.id,
+      swiggyUserId: user.swiggyUserId || swiggyUserId,
+    });
+
+    res.cookie(SESSION_COOKIE_NAME, sessionToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production" || !!process.env.VERCEL,
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_MAX_AGE_MS,
+    });
+
+    // 6. Return safe profile confirmation to browser — RAW ACCESS TOKEN IS NEVER EXPOSED
     res.json({
       success: true,
       connected: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        onboardingCompleted: user.onboardingCompleted,
+        goal: user.goal,
+        wellnessScore: user.wellnessScore,
+        streak: user.streak,
+      },
       expiresAt: expiresAt.toISOString(),
     });
   } catch (err: any) {
@@ -188,9 +256,9 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   }
 }
 
-// POST /api/swiggy/oauth/callback (and alias /api/swiggy/mcp/token)
-router.post("/swiggy/oauth/callback", requireAuth, handleTokenExchange);
-router.post("/swiggy/mcp/token", requireAuth, handleTokenExchange);
+// POST /api/swiggy/oauth/callback (PUBLIC: Authenticated via PKCE code + verifier, NOT Supabase JWT)
+router.post("/swiggy/oauth/callback", handleTokenExchange);
+router.post("/swiggy/mcp/token", handleTokenExchange);
 
 // Helper function to resolve user token and check 5-day expiration
 async function getValidUserToken(userId: string): Promise<string | null> {

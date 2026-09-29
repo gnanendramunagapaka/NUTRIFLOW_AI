@@ -1,15 +1,15 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
-import { supabase } from "@/lib/supabaseClient";
 import { useQueryClient } from "@tanstack/react-query";
+import { initiateSwiggyOAuth } from "@/lib/swiggyAuth";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface User {
   id: string;
+  swiggyUserId?: string | null;
   name: string;
-  email: string;
-  isEmailVerified: boolean;
+  email?: string | null;
   onboardingCompleted: boolean;
   age?: number | null;
   weight?: number | null;
@@ -42,11 +42,12 @@ export interface OnboardingData {
 
 interface AuthContextType {
   user: User | null;
-  supabaseUser: any | null;
-  session: any | null;
+  supabaseUser: null;
+  session: null;
   onboarded: boolean;
   onboardingData: OnboardingData;
   loading: boolean;
+  loginWithSwiggy: (returnTo?: string) => Promise<void>;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string) => Promise<boolean>;
   loginWithGoogle: () => Promise<void>;
@@ -58,74 +59,32 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// ─── Local storage keys ───────────────────────────────────────────────────────
+// ─── Local Storage Keys (for client caching only, NO auth tokens) ─────────────
 
 const LS_ONBOARDING = "nutriflow_onboarding";
-const LS_USER = "nutriflow_user_profile";
 
-function readLocalOnboarding(userId?: string): Partial<OnboardingData> {
+function readLocalOnboarding(): Partial<OnboardingData> {
   try {
-    const key = userId ? `${LS_ONBOARDING}_${userId}` : LS_ONBOARDING;
-    const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
-    
-    // Merge fallback to guest onboarding data if user-specific is empty
-    if (userId) {
-      const guestRaw = localStorage.getItem(LS_ONBOARDING);
-      if (guestRaw) {
-        return JSON.parse(guestRaw);
-      }
-    }
-    return {};
+    const raw = localStorage.getItem(LS_ONBOARDING);
+    return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
   }
 }
 
-function writeLocalOnboarding(data: Partial<OnboardingData>, userId?: string) {
+function writeLocalOnboarding(data: Partial<OnboardingData>) {
   try {
-    const key = userId ? `${LS_ONBOARDING}_${userId}` : LS_ONBOARDING;
-    const current = readLocalOnboarding(userId);
-    const merged = { ...current, ...data };
-    localStorage.setItem(key, JSON.stringify(merged));
-    
-    // Also update guest key for fallback persistence during early registration
-    if (!userId) {
-      localStorage.setItem(LS_ONBOARDING, JSON.stringify(merged));
-    }
+    const current = readLocalOnboarding();
+    localStorage.setItem(LS_ONBOARDING, JSON.stringify({ ...current, ...data }));
   } catch {
     // ignore
   }
 }
 
-function readLocalUser(userId?: string): User | null {
-  try {
-    const key = userId ? `${LS_USER}_${userId}` : LS_USER;
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeLocalUser(user: User, userId?: string) {
-  try {
-    const key = userId ? `${LS_USER}_${userId}` : LS_USER;
-    localStorage.setItem(key, JSON.stringify(user));
-  } catch {
-    // ignore
-  }
-}
-
-// ─── Token getter for API client ──────────────────────────────────────────────
+// ─── Token getter for API client: uses HttpOnly cookies, so null Bearer is fine ───
 
 setAuthTokenGetter(async () => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
-  } catch {
-    return null;
-  }
+  return null;
 });
 
 // ─── Auth Provider ────────────────────────────────────────────────────────────
@@ -133,191 +92,49 @@ setAuthTokenGetter(async () => {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
-  const [supabaseUser, setSupabaseUser] = useState<any | null>(null);
-  const [session, setSession] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const lastProcessedUserRef = useRef<string | null>(null);
 
-  // Build fallback user from Supabase session
-  const buildFallbackUser = (session: any, onboardingCompleted = false): User => {
-    const emailPart = session.user.email?.split("@")[0] || "";
-    const defaultName =
-      session.user.user_metadata?.name ||
-      (emailPart ? emailPart.charAt(0).toUpperCase() + emailPart.slice(1) : "User");
-
-    // Merge with user-scoped locally cached data
-    const local = readLocalUser(session.user.id);
-    const localOnboarding = readLocalOnboarding(session.user.id);
-
-    return {
-      id: session.user.id,
-      name: local?.name || defaultName,
-      email: session.user.email || "",
-      isEmailVerified: !!session.user.email_confirmed_at,
-      onboardingCompleted: local?.onboardingCompleted ?? onboardingCompleted,
-      goal: local?.goal || localOnboarding.goals?.[0] || "Stay Healthy",
-      dietaryPreferences: local?.dietaryPreferences || localOnboarding.dietaryPreferences || [],
-      allergies: local?.allergies || localOnboarding.allergies || [],
-      workoutFrequency: local?.workoutFrequency || localOnboarding.workoutFrequency || null,
-      waterIntake: local?.waterIntake || localOnboarding.waterIntake || null,
-      mealHabits: local?.mealHabits || localOnboarding.mealHabits || null,
-      budget: local?.budget || localOnboarding.budget || null,
-      wellnessScore: local?.wellnessScore || 72,
-      streak: local?.streak || 1,
-      avatarUrl: local?.avatarUrl || null,
-    };
-  };
-
-  // Build a guest user when no Supabase session exists but a guest session flag is present
-  const buildGuestUser = (): User => {
-    const local = readLocalUser();
-    const localOnboarding = readLocalOnboarding();
-    return {
-      id: "guest",
-      name: local?.name || "Guest",
-      email: local?.email || "",
-      isEmailVerified: false,
-      onboardingCompleted: local?.onboardingCompleted ?? false,
-      goal: local?.goal || localOnboarding.goals?.[0] || "Stay Healthy",
-      dietaryPreferences: local?.dietaryPreferences || localOnboarding.dietaryPreferences || [],
-      allergies: local?.allergies || localOnboarding.allergies || [],
-      workoutFrequency: local?.workoutFrequency || localOnboarding.workoutFrequency || null,
-      waterIntake: local?.waterIntake || localOnboarding.waterIntake || null,
-      mealHabits: local?.mealHabits || localOnboarding.mealHabits || null,
-      budget: local?.budget || localOnboarding.budget || null,
-      wellnessScore: local?.wellnessScore || 72,
-      streak: local?.streak || 1,
-      avatarUrl: local?.avatarUrl || null,
-    };
-  };
-
-  // Fetch or create profile from Supabase — with 4s timeout and fallback
-  const fetchOrCreateProfile = async (session: any): Promise<User> => {
-    const fallbackUser = buildFallbackUser(session);
-
-    try {
-      const profilePromise = (async () => {
-        const { data: profile, error } = await supabase
-          .from("user_profiles")
-          .select("*")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (error) {
-          console.warn("[Auth] Profile fetch error:", error.message);
-          return null;
-        }
-
-        if (!profile) {
-          // Auto-create profile for new user
-          const emailPart = session.user.email?.split("@")[0] || "";
-          const defaultName =
-            session.user.user_metadata?.name ||
-            (emailPart ? emailPart.charAt(0).toUpperCase() + emailPart.slice(1) : "User");
-
-          const { data: newProfile, error: insertErr } = await supabase
-            .from("user_profiles")
-            .insert({
-              id: session.user.id,
-              name: defaultName,
-              email: session.user.email || "",
-              goal: "Stay Healthy",
-              dietary_preferences: [],
-              allergies: [],
-              onboarding_completed: false,
-              wellness_score: 72,
-              streak: 1,
-            })
-            .select()
-            .single();
-
-          if (insertErr) {
-            console.warn("[Auth] Profile insert error:", insertErr.message);
-            return null;
-          }
-          return newProfile;
-        }
-
-        return profile;
-      })();
-
-      const timeoutPromise = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), 4000)
-      );
-
-      const result = await Promise.race([profilePromise, timeoutPromise]);
-
-      if (result) {
-        const dbUser: User = {
-          id: result.id,
-          name: result.name || fallbackUser.name,
-          email: result.email || session.user.email || "",
-          isEmailVerified: !!session.user.email_confirmed_at,
-          onboardingCompleted: result.onboarding_completed ?? false,
-          age: result.age,
-          weight: result.weight,
-          height: result.height,
-          goal: result.goal || "Stay Healthy",
-          dietaryPreferences: result.dietary_preferences || [],
-          allergies: result.allergies || [],
-          workoutFrequency: result.workout_frequency || null,
-          waterIntake: result.water_intake || null,
-          mealHabits: result.meal_habits || null,
-          budget: result.budget || null,
-          wellnessScore: result.wellness_score || 72,
-          streak: result.streak || 1,
-          avatarUrl: result.avatar_url || null,
-        };
-        writeLocalUser(dbUser, session.user.id);
-        return dbUser;
-      }
-
-      // Timeout — use fallback
-      console.warn("[Auth] Profile fetch timed out, using cached/fallback user.");
-      return fallbackUser;
-    } catch (err) {
-      console.error("[Auth] fetchOrCreateProfile exception:", err);
-      return fallbackUser;
-    }
-  };
-
+  // Rehydrate authenticated session from server via HttpOnly cookie
   const refreshUser = async () => {
     try {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      setSession(currentSession);
-      // If there is no Supabase session but a local guest session exists, initialize guest user
-      const hasGuest = typeof window !== "undefined" && localStorage.getItem("nutriflow_guest_session") === "true";
-      if (!currentSession && hasGuest) {
-        setUser(buildGuestUser());
-        setSupabaseUser(null);
-        lastProcessedUserRef.current = null;
-        setLoading(false);
-        return;
-      }
+      const res = await fetch("/api/auth/me", {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        credentials: "include", // Transmit HttpOnly session cookie
+      });
 
-      if (!currentSession) {
+      if (!res.ok) {
         setUser(null);
-        setSupabaseUser(null);
-        lastProcessedUserRef.current = null;
         return;
       }
 
-      const userId = currentSession.user.id;
-      const emailConfirmedBefore = supabaseUser?.email_confirmed_at;
-      const emailConfirmedNow = session.user.email_confirmed_at;
-
-      if (lastProcessedUserRef.current === userId && user && emailConfirmedBefore === emailConfirmedNow) {
-        // Already loaded profile for this user
-        setSupabaseUser(session.user);
-        return;
+      const data = await res.json().catch(() => ({}));
+      if (data.authenticated && data.user) {
+        setUser({
+          id: data.user.id,
+          swiggyUserId: data.user.swiggyUserId || null,
+          name: data.user.name || "Swiggy User",
+          email: data.user.email || null,
+          onboardingCompleted: data.user.onboardingCompleted ?? false,
+          age: data.user.age,
+          weight: data.user.weight,
+          height: data.user.height,
+          goal: data.user.goal || "Stay Healthy",
+          dietaryPreferences: data.user.dietaryPreferences || [],
+          allergies: data.user.allergies || [],
+          workoutFrequency: data.user.workoutFrequency || null,
+          waterIntake: data.user.waterIntake || null,
+          mealHabits: data.user.mealHabits || null,
+          budget: data.user.budget || null,
+          wellnessScore: data.user.wellnessScore ?? 72,
+          streak: data.user.streak ?? 1,
+          avatarUrl: data.user.avatarUrl || null,
+        });
+      } else {
+        setUser(null);
       }
-      lastProcessedUserRef.current = userId;
-
-      setSupabaseUser(session.user);
-      const profileUser = await fetchOrCreateProfile(session);
-      setUser(profileUser);
     } catch (err) {
-      console.error("[Auth] refreshUser error:", err);
+      console.warn("[Auth] Failed to refresh session:", err);
       setUser(null);
     } finally {
       setLoading(false);
@@ -325,193 +142,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    // Absolute safety: if loading never resolves, force it off after 8 seconds
-    const safetyTimer = setTimeout(() => {
-      setLoading((prev) => {
-        if (prev) {
-          console.warn("[Auth] Safety timer fired — forcing loading=false");
-          return false;
-        }
-        return prev;
-      });
-    }, 8000);
+    // Initial server session check
+    refreshUser();
+  }, []);
 
-    // Initial auth check — but first respond to any local guest session flag immediately
+  const loginWithSwiggy = async (returnTo = "/dashboard"): Promise<void> => {
+    await initiateSwiggyOAuth(returnTo);
+  };
+
+  const logout = async (): Promise<void> => {
     try {
-      const hasGuest = typeof window !== "undefined" && localStorage.getItem("nutriflow_guest_session") === "true";
-      if (hasGuest) {
-        setUser(buildGuestUser());
-        setSupabaseUser(null);
-        setLoading(false);
-      }
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (e) {
+      console.warn("[Auth] Logout request error:", e);
+    }
+
+    try {
+      await fetch("/api/swiggy/disconnect", {
+        method: "POST",
+        credentials: "include",
+      });
     } catch {
       // ignore
     }
 
-    // Continue with normal refresh which will override guest if a real session exists
-    refreshUser();
-
-    // Listen to auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[Auth] State change:", event, session?.user?.id);
-
-      if (session) {
-        setSession(session);
-        const userId = session.user.id;
-        setSupabaseUser(session.user);
-        
-        const emailConfirmedBefore = supabaseUser?.email_confirmed_at;
-        const emailConfirmedNow = session.user.email_confirmed_at;
-
-        if (lastProcessedUserRef.current === userId && user && emailConfirmedBefore === emailConfirmedNow) {
-          // Already processing/processed this user
-          setLoading(false);
-          return;
-        }
-        lastProcessedUserRef.current = userId;
-
-        try {
-          const profileUser = await fetchOrCreateProfile(session);
-          setUser(profileUser);
-        } catch (err) {
-          console.error("[Auth] onAuthStateChange profile error:", err);
-        }
-      } else {
-        setSession(null);
-        lastProcessedUserRef.current = null;
-        setSupabaseUser(null);
-
-        // If a guest flag is present, rehydrate guest user instead of nulling out
-        const hasGuest = typeof window !== "undefined" && localStorage.getItem("nutriflow_guest_session") === "true";
-        if (hasGuest) {
-          setUser(buildGuestUser());
-        } else {
-          setUser(null);
-        }
-        try {
-          queryClient.clear();
-        } catch {
-          // ignore
-        }
-      }
-
-      setLoading(false);
-    });
-
-    // Listen for same-tab events when guest session is toggled (connectSwiggyAccount sets localStorage)
-    const onGuestEvent = () => {
-      try {
-        const hasGuest = localStorage.getItem("nutriflow_guest_session") === "true";
-        if (hasGuest) {
-          setUser(buildGuestUser());
-          setSupabaseUser(null);
-          setLoading(false);
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    window.addEventListener("nutriflow-guest-session", onGuestEvent);
-    // Also respond to storage events (other tabs)
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "nutriflow_guest_session") onGuestEvent();
-    };
-    window.addEventListener("storage", onStorage);
-
-    return () => {
-      clearTimeout(safetyTimer);
-      subscription.unsubscribe();
-      window.removeEventListener("nutriflow-guest-session", onGuestEvent);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
-
-  // ─── Auth Actions ──────────────────────────────────────────────────────────
-
-  const login = async (email: string, password: string): Promise<boolean> => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(error.message);
-    if (data.session) {
-      await refreshUser();
-    }
-    return true;
-  };
-
-  const signup = async (name: string, email: string, password: string): Promise<boolean> => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { 
-        data: { name },
-        emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined
-      },
-    });
-    if (error) throw new Error(error.message);
-    if (data.session) {
-      await refreshUser();
-    } else if (data.user) {
-      setSupabaseUser(data.user);
-      setLoading(false);
-    }
-    return true;
-  };
-
-  const loginWithGoogle = async (): Promise<void> => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined
-      }
-    });
-    if (error) throw new Error(error.message);
-  };
-
-  const logout = async (): Promise<void> => {
-    const userId = supabaseUser?.id;
-    lastProcessedUserRef.current = null;
-
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.warn("[Auth] Logout error:", err);
-    }
-
     setUser(null);
-    setSupabaseUser(null);
-    setSession(null);
-
-    // Clear all user-specific and fallback localStorage data
-    if (userId) {
-      localStorage.removeItem(`${LS_USER}_${userId}`);
-      localStorage.removeItem(`${LS_ONBOARDING}_${userId}`);
-      localStorage.removeItem(`nutriflow_cart_${userId}`);
-      localStorage.removeItem(`nutriflow_last_order_${userId}`);
-    }
-    localStorage.removeItem(LS_USER);
     localStorage.removeItem(LS_ONBOARDING);
     localStorage.removeItem("nutriflow_cart");
-    localStorage.removeItem("nutriflow_chat");
-    localStorage.removeItem("nutriflow_cart_guest");
-    localStorage.removeItem("nutriflow_last_order");
-
-    // Clear any Supabase-stored auth session keys and tokens
-    try {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && (key.startsWith("sb-") || key.includes("supabase") || key.startsWith("nutriflow_"))) {
-          localStorage.removeItem(key);
-        }
-      }
-    } catch (e) {
-      console.warn("[Auth] Error clearing localStorage keys:", e);
-    }
-
-    try {
-      sessionStorage.clear();
-    } catch (e) {
-      // ignore
-    }
 
     try {
       queryClient.clear();
@@ -519,18 +179,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // ignore
     }
 
-    // Force redirect to landing page and full reload to clear all active JS memory/states
     if (typeof window !== "undefined") {
-      window.location.href = "/";
+      window.location.href = "/login";
     }
   };
 
-  // ─── Onboarding ────────────────────────────────────────────────────────────
-
   const updateOnboarding = async (data: Partial<OnboardingData>): Promise<void> => {
-    const userId = supabaseUser?.id;
-    // 1. Always update local state immediately (non-blocking)
-    writeLocalOnboarding(data, userId);
+    writeLocalOnboarding(data);
 
     if (user) {
       const updatedUser: User = {
@@ -548,72 +203,69 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         height: data.height !== undefined ? data.height : user.height,
       };
       setUser(updatedUser);
-      writeLocalUser(updatedUser, userId);
     }
 
-    // 2. Background: persist to Supabase (fire-and-forget — never blocks)
+    // Persist to backend via authenticated session
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
-
       const profileUpdates: Record<string, any> = {};
       if (data.name !== undefined) profileUpdates.name = data.name;
       if (data.age !== undefined) profileUpdates.age = data.age;
       if (data.weight !== undefined) profileUpdates.weight = data.weight;
       if (data.height !== undefined) profileUpdates.height = data.height;
       if (data.goals !== undefined) profileUpdates.goal = data.goals[0] || user?.goal || "Stay Healthy";
-      if (data.dietaryPreferences !== undefined) profileUpdates.dietary_preferences = data.dietaryPreferences;
+      if (data.dietaryPreferences !== undefined) profileUpdates.dietaryPreferences = data.dietaryPreferences;
       if (data.allergies !== undefined) profileUpdates.allergies = data.allergies;
-      if (data.workoutFrequency !== undefined) profileUpdates.workout_frequency = data.workoutFrequency;
-      if (data.waterIntake !== undefined) profileUpdates.water_intake = data.waterIntake;
-      if (data.mealHabits !== undefined) profileUpdates.meal_habits = data.mealHabits;
+      if (data.workoutFrequency !== undefined) profileUpdates.workoutFrequency = data.workoutFrequency;
+      if (data.waterIntake !== undefined) profileUpdates.waterIntake = data.waterIntake;
+      if (data.mealHabits !== undefined) profileUpdates.mealHabits = data.mealHabits;
       if (data.budget !== undefined) profileUpdates.budget = data.budget;
 
       if (Object.keys(profileUpdates).length > 0) {
-        // Use upsert to handle both new and existing profiles safely
-        const { error: upsertErr } = await supabase
-          .from("user_profiles")
-          .upsert({ id: sbUser.id, email: sbUser.email || "", ...profileUpdates }, { onConflict: "id" });
-
-        if (upsertErr) {
-          console.warn("[Auth] Profile upsert error (non-critical):", upsertErr.message);
-        }
+        await fetch("/api/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(profileUpdates),
+        });
       }
     } catch (err) {
-      console.warn("[Auth] updateOnboarding background sync failed (non-critical):", err);
+      console.warn("[Auth] updateOnboarding background sync failed:", err);
     }
   };
 
   const completeOnboarding = async (): Promise<void> => {
-    const userId = supabaseUser?.id;
-    // 1. Update local state immediately
     if (user) {
-      const updatedUser: User = { ...user, onboardingCompleted: true };
-      setUser(updatedUser);
-      writeLocalUser(updatedUser, userId);
+      setUser({ ...user, onboardingCompleted: true });
     }
 
-    // 2. Background: update Supabase
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
-
-      const { error } = await supabase
-        .from("user_profiles")
-        .upsert({ id: sbUser.id, email: sbUser.email || "", onboarding_completed: true }, { onConflict: "id" });
-
-      if (error) {
-        console.warn("[Auth] completeOnboarding DB error (non-critical):", error.message);
-      }
+      await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ onboardingCompleted: true }),
+      });
     } catch (err) {
-      console.warn("[Auth] completeOnboarding background sync failed (non-critical):", err);
+      console.warn("[Auth] completeOnboarding sync failed:", err);
     }
   };
 
-  // ─── Derived state ─────────────────────────────────────────────────────────
+  // Deprecated login methods for legacy props compatibility
+  const login = async (): Promise<boolean> => {
+    await loginWithSwiggy();
+    return true;
+  };
 
-  const localOnboarding = readLocalOnboarding(supabaseUser?.id);
+  const signup = async (): Promise<boolean> => {
+    await loginWithSwiggy();
+    return true;
+  };
 
+  const loginWithGoogle = async (): Promise<void> => {
+    await loginWithSwiggy();
+  };
+
+  const localOnboarding = readLocalOnboarding();
   const onboardingData: OnboardingData = {
     goals: user?.goal ? [user.goal] : (localOnboarding.goals || []),
     dietaryPreferences: user?.dietaryPreferences || localOnboarding.dietaryPreferences || [],
@@ -634,11 +286,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        supabaseUser,
-        session,
+        supabaseUser: null,
+        session: null,
         onboarded,
         onboardingData,
         loading,
+        loginWithSwiggy,
         login,
         signup,
         loginWithGoogle,

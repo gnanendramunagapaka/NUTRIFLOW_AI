@@ -162,6 +162,21 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
   const userContent = body.data.content;
   const hasHistoryInBody = req.body.history && Array.isArray(req.body.history);
 
+  const [conv] = await db.select().from(conversations).where(
+    and(eq(conversations.id, params.data.id), eq(conversations.userId, req.user!.id))
+  );
+  if (!conv) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+
+  // Save user message first
+  await db.insert(messages).values({
+    conversationId: params.data.id,
+    role: "user",
+    content: userContent,
+  });
+
   let contents = [];
 
   if (hasHistoryInBody) {
@@ -177,23 +192,7 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
       parts: [{ text: userContent }]
     });
   } else {
-    // Legacy path: check conversation and load history from database
-    const [conv] = await db.select().from(conversations).where(
-      and(eq(conversations.id, params.data.id), eq(conversations.userId, req.user!.id))
-    );
-    if (!conv) {
-      res.status(404).json({ error: "Conversation not found" });
-      return;
-    }
-
     console.log(`[Chat] User message in conv ${params.data.id}: "${userContent.slice(0, 80)}..."`);
-
-    // Save user message first
-    await db.insert(messages).values({
-      conversationId: params.data.id,
-      role: "user",
-      content: userContent,
-    });
 
     // Load conversation history (last 20 messages)
     const history = await db.select().from(messages)
@@ -260,14 +259,12 @@ router.post("/openai/conversations/:id/messages", requireAuth, async (req, res):
 
   // Save assistant message to DB
   try {
-    if (!hasHistoryInBody) {
-      await db.insert(messages).values({
-        conversationId: params.data.id,
-        role: "assistant",
-        content: fullResponse,
-      });
-      console.log(`[Chat] Saved assistant message to DB (fallback=${usedFallback})`);
-    }
+    await db.insert(messages).values({
+      conversationId: params.data.id,
+      role: "assistant",
+      content: fullResponse,
+    });
+    console.log(`[Chat] Saved assistant message to DB (fallback=${usedFallback})`);
   } catch (dbError) {
     console.error("[Chat] Failed to save assistant message to DB:", dbError);
   }

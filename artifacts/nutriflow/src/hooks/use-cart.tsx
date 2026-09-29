@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "./use-auth";
 
 export interface CartItem {
@@ -35,13 +34,13 @@ export const DEFAULT_ADDRESSES: Address[] = [
 ];
 
 export function useSwiggyAddresses() {
-  const { session } = useAuth();
+  const { user } = useAuth();
 
   return useQuery<Address[]>({
     queryKey: ["swiggy", "addresses"],
     queryFn: async () => {
-      // Must be authenticated with Supabase to query user's Swiggy connection
-      if (!session?.access_token) {
+      // Must have active NutriFlow Swiggy session
+      if (!user) {
         return DEFAULT_ADDRESSES;
       }
 
@@ -49,8 +48,8 @@ export function useSwiggyAddresses() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
         },
+        credentials: "include",
         body: JSON.stringify({}),
       });
 
@@ -183,48 +182,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
             setItems(localItems);
             localStorage.setItem(cartKey, JSON.stringify(localItems));
 
-            // Sync merged guest items to Supabase
-            const { data: sbUser } = await supabase.auth.getUser();
-            if (sbUser?.user) {
-              for (const item of guestItems) {
-                const itemIdStr = String(item.id);
-                // Check if already in DB
-                const { data: existing } = await supabase
-                  .from("cart_items")
-                  .select("*")
-                  .eq("item_id", itemIdStr)
-                  .eq("user_id", sbUser.user.id)
-                  .maybeSingle();
-
-                if (existing) {
-                  await supabase
-                    .from("cart_items")
-                    .update({ quantity: existing.quantity + item.quantity })
-                    .eq("id", existing.id);
-                } else {
-                  await supabase
-                    .from("cart_items")
-                    .insert({
-                      user_id: sbUser.user.id,
-                      item_id: itemIdStr,
-                      name: item.name,
-                      price: item.price,
-                      quantity: item.quantity,
-                      type: item.type,
-                      calories: item.calories,
-                      protein: item.protein,
-                      carbs: item.carbs,
-                      fat: item.fat,
-                      health_score: item.healthScore,
-                      image_url: item.imageUrl,
-                      cuisine: item.cuisine,
-                      category: item.category,
-                      unit: item.unit,
-                      description: item.description,
-                    });
-                }
-              }
-            }
             // Clear guest cart
             localStorage.removeItem("nutriflow_cart_guest");
           }
@@ -234,54 +191,45 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // 3. Background: fetch from Supabase and merge
+    // 3. Background: fetch from NutriFlow backend API and merge
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
+      const res = await fetch("/api/cart", {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
 
-      const { data: dbItems, error } = await supabase
-        .from("cart_items")
-        .select("*")
-        .eq("user_id", sbUser.id)
-        .order("created_at", { ascending: true });
+      if (res.ok) {
+        const dbItems = await res.json();
+        if (Array.isArray(dbItems) && dbItems.length > 0) {
+          const mapped: CartItem[] = dbItems.map((row: any) => ({
+            id: row.itemId || row.id,
+            itemId: String(row.id),
+            name: row.name,
+            price: row.price,
+            quantity: row.quantity,
+            type: row.type,
+            calories: row.calories,
+            protein: row.protein,
+            carbs: row.carbs,
+            fat: row.fat,
+            healthScore: row.healthScore,
+            imageUrl: row.imageUrl,
+            cuisine: row.cuisine,
+            category: row.category,
+            unit: row.unit,
+            description: row.description,
+          }));
 
-      if (error) {
-        console.warn("[useCart] Supabase cart fetch error (non-critical):", error.message);
-        return;
+          const dbIds = new Set(mapped.map(m => String(m.id)));
+          const localOnly = localItems.filter(li => !dbIds.has(String(li.id)));
+          const merged = [...mapped, ...localOnly];
+          setItems(merged);
+          localStorage.setItem(cartKey, JSON.stringify(merged));
+          console.log("[useCart] Cart loaded from NutriFlow backend:", dbItems.length, "items");
+        }
       }
-
-      if (dbItems && dbItems.length > 0) {
-        // Map DB rows to CartItem shape
-        const mapped: CartItem[] = dbItems.map((row: any) => ({
-          id: row.item_id || row.id,
-          itemId: row.id,
-          name: row.name,
-          price: row.price,
-          quantity: row.quantity,
-          type: row.type,
-          calories: row.calories,
-          protein: row.protein,
-          carbs: row.carbs,
-          fat: row.fat,
-          healthScore: row.health_score,
-          imageUrl: row.image_url,
-          cuisine: row.cuisine,
-          category: row.category,
-          unit: row.unit,
-          description: row.description,
-        }));
-
-        // Merge: DB is source of truth; keep local items that aren't in DB
-        const dbIds = new Set(mapped.map(m => String(m.id)));
-        const localOnly = localItems.filter(li => !dbIds.has(String(li.id)));
-        const merged = [...mapped, ...localOnly];
-        setItems(merged);
-        localStorage.setItem(cartKey, JSON.stringify(merged));
-      }
-
-      console.log("[useCart] Cart loaded from Supabase:", dbItems?.length ?? 0, "items");
     } catch (e) {
-      console.warn("[useCart] Background DB cart load failed (non-critical):", e);
+      console.warn("[useCart] Background API cart load failed (non-critical):", e);
     }
   };
 
@@ -300,52 +248,33 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems(updated);
     localStorage.setItem(getCartKey(), JSON.stringify(updated));
 
-    // Persist to Supabase if logged in
+    // Persist to NutriFlow backend if logged in
     if (user) {
       try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (sbUser) {
-          const { data: existing, error: fetchErr } = await supabase
-            .from("cart_items")
-            .select("*")
-            .eq("item_id", itemIdStr)
-            .eq("user_id", sbUser.id)
-            .maybeSingle();
-
-          if (fetchErr) throw fetchErr;
-
-          if (existing) {
-            const { error: updateErr } = await supabase
-              .from("cart_items")
-              .update({ quantity: existing.quantity + qty })
-              .eq("id", existing.id);
-            if (updateErr) throw updateErr;
-          } else {
-            const { error: insertErr } = await supabase
-              .from("cart_items")
-              .insert({
-                user_id: sbUser.id,
-                item_id: itemIdStr,
-                name: newItem.name,
-                price: newItem.price,
-                quantity: qty,
-                type: newItem.type,
-                calories: newItem.calories,
-                protein: newItem.protein,
-                carbs: newItem.carbs,
-                fat: newItem.fat,
-                health_score: newItem.healthScore,
-                image_url: newItem.imageUrl,
-                cuisine: newItem.cuisine,
-                category: newItem.category,
-                unit: newItem.unit,
-                description: newItem.description,
-              });
-            if (insertErr) throw insertErr;
-          }
-        }
+        await fetch("/api/cart", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            itemId: itemIdStr,
+            name: newItem.name,
+            price: newItem.price,
+            quantity: qty,
+            type: newItem.type,
+            calories: newItem.calories,
+            protein: newItem.protein,
+            carbs: newItem.carbs,
+            fat: newItem.fat,
+            healthScore: newItem.healthScore,
+            imageUrl: newItem.imageUrl,
+            cuisine: newItem.cuisine,
+            category: newItem.category,
+            unit: newItem.unit,
+            description: newItem.description,
+          }),
+        });
       } catch (e) {
-        console.error("[useCart] Failed to save added item to Supabase:", e);
+        console.warn("[useCart] Failed to save added item to backend:", e);
       }
     }
   };
@@ -358,16 +287,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     if (user) {
       try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (!sbUser) return;
-        const { error } = await supabase
-          .from("cart_items")
-          .delete()
-          .eq("item_id", idStr)
-          .eq("user_id", sbUser.id);
-        if (error) console.warn("[useCart] removeFromCart DB error (non-critical):", error.message);
+        await fetch(`/api/cart/${encodeURIComponent(idStr)}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
       } catch (e) {
-        console.warn("[useCart] Failed to remove item from Supabase (non-critical):", e);
+        console.warn("[useCart] Failed to remove item from backend:", e);
       }
     }
   };
@@ -385,16 +310,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     if (user) {
       try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (!sbUser) return;
-        const { error } = await supabase
-          .from("cart_items")
-          .update({ quantity })
-          .eq("item_id", idStr)
-          .eq("user_id", sbUser.id);
-        if (error) console.warn("[useCart] updateQuantity DB error (non-critical):", error.message);
+        await fetch(`/api/cart/${encodeURIComponent(idStr)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ quantity }),
+        });
       } catch (e) {
-        console.warn("[useCart] Failed to update item quantity in Supabase (non-critical):", e);
+        console.warn("[useCart] Failed to update item quantity in backend:", e);
       }
     }
   };
@@ -405,16 +328,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     if (user) {
       try {
-        const { data: { user: sbUser } } = await supabase.auth.getUser();
-        if (sbUser) {
-          const { error } = await supabase
-            .from("cart_items")
-            .delete()
-            .eq("user_id", sbUser.id);
-          if (error) throw error;
-        }
+        await fetch("/api/cart", {
+          method: "DELETE",
+          credentials: "include",
+        });
       } catch (e) {
-        console.error("[useCart] Failed to clear Supabase cart:", e);
+        console.warn("[useCart] Failed to clear cart in backend:", e);
       }
     }
   };

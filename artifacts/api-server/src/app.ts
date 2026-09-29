@@ -10,6 +10,8 @@ import fs from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
+import cookieParser from "cookie-parser";
+
 const app: Express = express();
 
 app.use(
@@ -31,9 +33,57 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+// CORS configuration supporting credentials (cookies)
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (e.g. mobile apps, curl, serverless same-origin rewrites)
+      if (!origin) return callback(null, true);
+
+      const allowedHosts = [
+        "nutriflow-ai.vercel.app",
+        "localhost",
+        "127.0.0.1",
+      ];
+      try {
+        const url = new URL(origin);
+        if (allowedHosts.some(h => url.hostname === h || url.hostname.endsWith(`.${h}`))) {
+          return callback(null, true);
+        }
+      } catch {
+        // invalid URL
+      }
+      return callback(null, false);
+    },
+    credentials: true,
+  }),
+);
+
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// CSRF Defense-in-depth: For state-changing methods, verify Origin if present
+app.use((req: Request, res: Response, next) => {
+  const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
+  if (isMutating && req.headers.origin) {
+    const origin = req.headers.origin as string;
+    try {
+      const url = new URL(origin);
+      const allowedHosts = ["nutriflow-ai.vercel.app", "localhost", "127.0.0.1"];
+      const isAllowed = allowedHosts.some(h => url.hostname === h || url.hostname.endsWith(`.${h}`));
+      if (!isAllowed) {
+        res.status(403).json({ error: "Forbidden: Cross-site request rejected" });
+        return;
+      }
+    } catch {
+      res.status(403).json({ error: "Forbidden: Invalid request origin" });
+      return;
+    }
+  }
+  next();
+});
 
 app.use("/api", router);
 

@@ -20,7 +20,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabaseClient";
 import { MOCK_TRENDING_MEALS, MOCK_WEEKLY_STATS, MOCK_WELLNESS_SUMMARY } from "@/lib/mockData";
 
 export default function Dashboard() {
@@ -76,25 +75,23 @@ export default function Dashboard() {
 
   const loadSavedMeals = async () => {
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) {
+      if (!user) {
         setSavedMeals([]);
         return;
       }
 
-      const { data, error } = await supabase
-        .from("saved_meals")
-        .select("*")
-        .eq("user_id", sbUser.id)
-        .order("created_at", { ascending: false });
+      const res = await fetch("/api/meals/saved", {
+        headers: { Accept: "application/json" },
+        credentials: "include",
+      });
 
-      if (error) {
-        console.warn("[Dashboard] saved_meals fetch error (non-critical):", error.message);
+      if (!res.ok) {
         setSavedMeals([]);
         return;
       }
 
-      setSavedMeals(data || []);
+      const data = await res.json();
+      setSavedMeals(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn("[Dashboard] loadSavedMeals failed (non-critical):", e);
       setSavedMeals([]);
@@ -109,38 +106,40 @@ export default function Dashboard() {
   }, [user]);
 
   const toggleSaveMeal = async (meal: any) => {
-    const isSaved = savedMeals.some((sm: any) => sm.meal_id === meal.id || sm.name === meal.name);
+    const isSaved = savedMeals.some((sm: any) => sm.mealId === meal.id || sm.name === meal.name || sm.meal_id === meal.id);
     try {
-      const { data: { user: sbUser } } = await supabase.auth.getUser();
-      if (!sbUser) return;
+      if (!user) {
+        toast({ title: "Please connect Swiggy to save meals", variant: "destructive" });
+        return;
+      }
 
       if (isSaved) {
-        const target = savedMeals.find((sm: any) => sm.meal_id === meal.id || sm.name === meal.name);
+        const target = savedMeals.find((sm: any) => sm.mealId === meal.id || sm.name === meal.name || sm.meal_id === meal.id);
         if (target) {
-          const { error } = await supabase
-            .from("saved_meals")
-            .delete()
-            .eq("id", target.id);
-          if (error) throw error;
+          await fetch(`/api/meals/saved/${target.id}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
         }
         toast({ title: "Removed from Saved Meals ❤️" });
       } else {
-        const { error } = await supabase
-          .from("saved_meals")
-          .insert({
-            user_id: sbUser.id,
-            meal_id: meal.id,
+        await fetch("/api/meals/saved", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            mealId: meal.id,
             name: meal.name,
             description: meal.description || "",
-            image_url: meal.imageUrl || "",
+            imageUrl: meal.imageUrl || "",
             calories: meal.calories,
             protein: meal.protein,
             carbs: meal.carbs || 12,
             fat: meal.fat || 10,
-            health_score: meal.healthScore || meal.health_score || 8.5,
+            healthScore: meal.healthScore || meal.health_score || 8.5,
             price: meal.price,
-          });
-        if (error) throw error;
+          }),
+        });
         toast({ title: "Added to Saved Meals ❤️" });
       }
       await loadSavedMeals();

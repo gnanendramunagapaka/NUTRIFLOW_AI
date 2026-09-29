@@ -5,13 +5,10 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function Landing() {
-  const { user, supabaseUser, onboarded } = useAuth();
+  const { user, onboarded } = useAuth();
 
   const getStartedHref = () => {
     if (!user) return "/login";
-    if (supabaseUser && !supabaseUser.email_confirmed_at) {
-      return `/verify-email?email=${encodeURIComponent(supabaseUser.email || "")}`;
-    }
     return onboarded ? "/dashboard" : "/onboarding";
   };
 

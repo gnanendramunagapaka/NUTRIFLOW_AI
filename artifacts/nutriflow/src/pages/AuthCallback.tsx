@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { supabase } from "@/lib/supabaseClient";
 import { Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -16,181 +15,103 @@ export default function AuthCallback() {
 
     async function handleCallback() {
       try {
-        console.log("[AUTH CALLBACK] Processing callback parameters...");
+        console.log("[AUTH CALLBACK] Processing Swiggy OAuth callback parameters...");
 
         const urlParams = new URLSearchParams(window.location.search);
-        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
 
-        // ─── 1. Check for Swiggy OAuth PKCE callback (code + state in query params) ───
         const swiggyCode = urlParams.get("code");
         const swiggyState = urlParams.get("state");
         const swiggyError = urlParams.get("error");
 
-        // Detect if this is a Swiggy callback by checking for state that matches our stored PKCE state
+        // Validate state against stored PKCE state
         const storedState = sessionStorage.getItem("swiggy_pkce_state");
         const isSwiggyCallback = swiggyState && storedState && swiggyState === storedState;
 
-        if (isSwiggyCallback) {
-          console.log("[AUTH CALLBACK] Detected Swiggy OAuth callback");
-
-          if (swiggyError) {
-            console.warn("[AUTH CALLBACK] Swiggy OAuth error:", swiggyError);
-            toast({
-              title: "Swiggy Authorization Failed",
-              description: `Swiggy returned an error: ${swiggyError}`,
-              variant: "destructive",
-            });
-            // Clean up PKCE storage
-            sessionStorage.removeItem("swiggy_pkce_state");
-            sessionStorage.removeItem("swiggy_pkce_verifier");
-            setLocation("/profile");
-            return;
-          }
-
-          if (swiggyCode) {
-            const codeVerifier = sessionStorage.getItem("swiggy_pkce_verifier");
-            if (!codeVerifier) {
-              console.error("[AUTH CALLBACK] Missing PKCE code_verifier in sessionStorage");
-              toast({
-                title: "Authorization Error",
-                description: "PKCE verification data not found. Please try connecting Swiggy again.",
-                variant: "destructive",
-              });
-              setLocation("/profile");
-              return;
-            }
-
-            try {
-              // Retrieve user's Supabase session to link Swiggy token to their profile
-              const { data: { session } } = await supabase.auth.getSession();
-              const authHeaders: Record<string, string> = { "Content-Type": "application/json" };
-              if (session?.access_token) {
-                authHeaders["Authorization"] = `Bearer ${session.access_token}`;
-              }
-
-              const redirectUri = window.location.origin + "/auth/callback";
-
-              // Exchange code + verifier via backend
-              const response = await fetch("/api/swiggy/oauth/callback", {
-                method: "POST",
-                headers: authHeaders,
-                body: JSON.stringify({
-                  code: swiggyCode,
-                  code_verifier: codeVerifier,
-                  redirect_uri: redirectUri,
-                }),
-              });
-
-              const result = await response.json();
-
-              if (response.ok && !result.error && result.connected) {
-                toast({
-                  title: "Swiggy Connected! ⚡",
-                  description: "Your Swiggy account has been linked successfully.",
-                });
-              } else {
-                console.warn("[AUTH CALLBACK] Swiggy token exchange failed:", result);
-                toast({
-                  title: "Swiggy Connection Issue",
-                  description: result.error || "Token exchange failed. Please try connecting again.",
-                  variant: "destructive",
-                });
-              }
-            } catch (err: any) {
-              console.error("[AUTH CALLBACK] Swiggy token exchange error:", err);
-              toast({
-                title: "Connection Error",
-                description: "Failed to complete Swiggy authorization. Please try again.",
-                variant: "destructive",
-              });
-            } finally {
-              // Always clean up PKCE storage
-              sessionStorage.removeItem("swiggy_pkce_state");
-              sessionStorage.removeItem("swiggy_pkce_verifier");
-            }
-          }
-
-          // Redirect to return URL or profile
-          const returnTo = sessionStorage.getItem("swiggy_auth_return_to");
-          sessionStorage.removeItem("swiggy_auth_return_to");
-          setLocation(returnTo || "/profile");
+        if (!isSwiggyCallback) {
+          console.warn("[AUTH CALLBACK] Unrecognized or invalid OAuth state parameter");
+          setError("Invalid authentication state. Please try connecting Swiggy again.");
+          setTimeout(() => {
+            if (active) setLocation("/login");
+          }, 2000);
           return;
         }
 
-        // ─── 2. Supabase Auth Callback (GoTrue session recovery) ───
-        const recoveryPromise = (async () => {
-          // GoTrue client automatically exchanges the code/hash for a session
-          const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
-          if (sessionErr) {
-            console.warn("[AUTH CALLBACK] Error getting session initially:", sessionErr.message);
-          }
+        if (swiggyError) {
+          console.warn("[AUTH CALLBACK] Swiggy returned OAuth error:", swiggyError);
+          toast({
+            title: "Swiggy Authorization Failed",
+            description: `Swiggy returned: ${swiggyError}`,
+            variant: "destructive",
+          });
+          sessionStorage.removeItem("swiggy_pkce_state");
+          sessionStorage.removeItem("swiggy_pkce_verifier");
+          setLocation("/login");
+          return;
+        }
 
-          let activeSession = session;
-          if (!activeSession) {
-            // Wait a brief moment in case GoTrue is still processing
-            await new Promise((resolve) => setTimeout(resolve, 1500));
-            const { data: { session: retrySession }, error: retryErr } = await supabase.auth.getSession();
-            if (retryErr) {
-              console.warn("[AUTH CALLBACK] Error getting session on retry:", retryErr.message);
-            }
-            activeSession = retrySession;
-          }
+        if (!swiggyCode) {
+          throw new Error("No authorization code received from Swiggy.");
+        }
 
-          if (!activeSession) {
-            throw new Error("No active session found.");
-          }
+        const codeVerifier = sessionStorage.getItem("swiggy_pkce_verifier");
+        if (!codeVerifier) {
+          throw new Error("PKCE verification data not found. Please try connecting again.");
+        }
 
-          console.log("[AUTH CALLBACK] Session resolved, refreshing user context...");
+        const redirectUri = window.location.origin + "/auth/callback";
 
-          // Refresh the auth state so AuthProvider gets the loaded user profile
-          await refreshUser();
-
-          // Query the user profile from Supabase to check onboarding status
-          const { data: profile, error: profileErr } = await supabase
-            .from("user_profiles")
-            .select("onboarding_completed")
-            .eq("id", activeSession.user.id)
-            .maybeSingle();
-
-          if (profileErr) {
-            console.warn("[AUTH CALLBACK] Error querying profile (non-critical):", profileErr.message);
-          }
-
-          return { activeSession, profile };
-        })();
-
-        const timeoutPromise = new Promise<{ activeSession: any; profile: any }>((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 8000)
-        );
-
-        const { profile, activeSession } = await Promise.race([recoveryPromise, timeoutPromise]);
-
-        if (!active) return;
-
-        console.log("[AUTH CALLBACK] Session restored successfully, redirecting...");
-        toast({
-          title: "Authentication Verified! 🎉",
-          description: "Your session has been restored successfully.",
+        // Exchange authorization code for authenticated session via backend
+        // Cookie (nutriflow_session) is set automatically by the server response
+        const response = await fetch("/api/swiggy/oauth/callback", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include", // Receive and persist HttpOnly session cookie
+          body: JSON.stringify({
+            code: swiggyCode,
+            code_verifier: codeVerifier,
+            redirect_uri: redirectUri,
+          }),
         });
 
-        // Redirect based on onboarding state
-        const onboarded = profile?.onboarding_completed ?? false;
-        setLocation(onboarded ? "/dashboard" : "/onboarding");
-      } catch (err: any) {
-        console.error("[AUTH CALLBACK] Callback recovery failed:", err);
+        const result = await response.json().catch(() => ({}));
+
+        // Always clean up PKCE storage
+        sessionStorage.removeItem("swiggy_pkce_state");
+        sessionStorage.removeItem("swiggy_pkce_verifier");
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "Swiggy token exchange failed");
+        }
+
         if (!active) return;
 
-        setError(err.message || "Authentication failed");
+        // Rehydrate NutriFlow user session state from the new session cookie
+        await refreshUser();
+
         toast({
-          title: "Authentication Issue",
-          description: "We couldn't verify your session. Redirecting to login...",
+          title: "Swiggy Connected! ⚡",
+          description: "Welcome to NutriFlow AI! Your Swiggy account is verified.",
+        });
+
+        const returnTo = sessionStorage.getItem("swiggy_auth_return_to");
+        sessionStorage.removeItem("swiggy_auth_return_to");
+        setLocation(returnTo || "/dashboard");
+      } catch (err: any) {
+        console.error("[AUTH CALLBACK] Callback failure:", err);
+        if (!active) return;
+
+        setError(err.message || "Failed to complete Swiggy authorization");
+        toast({
+          title: "Swiggy Connection Issue",
+          description: err.message || "Could not complete authorization. Please try again.",
           variant: "destructive",
         });
 
-        // Redirect back to login after a brief delay
         setTimeout(() => {
           if (active) setLocation("/login");
-        }, 2000);
+        }, 2500);
       }
     }
 
@@ -209,18 +130,18 @@ export default function AuthCallback() {
             <div className="mx-auto bg-destructive/10 w-16 h-16 rounded-full flex items-center justify-center text-destructive mb-3 shadow-inner">
               <span className="text-2xl font-bold">!</span>
             </div>
-            <h2 className="text-2xl font-bold text-foreground">Verification Error</h2>
+            <h2 className="text-2xl font-bold text-foreground">Authorization Error</h2>
             <p className="text-sm text-muted-foreground">{error}</p>
-            <p className="text-xs text-muted-foreground/80">Redirecting you to the sign in page...</p>
+            <p className="text-xs text-muted-foreground/80">Redirecting you back to login...</p>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="mx-auto bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center text-primary mb-3 shadow-inner">
               <Loader2 className="h-8 w-8 animate-spin" />
             </div>
-            <h2 className="text-2xl font-bold text-foreground">Verifying Your Session</h2>
+            <h2 className="text-2xl font-bold text-foreground">Connecting with Swiggy</h2>
             <p className="text-sm text-muted-foreground">
-              Please wait while we secure your account and restore your session...
+              Verifying your Swiggy authorization and securing your NutriFlow session...
             </p>
           </div>
         )}
