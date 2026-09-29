@@ -97,7 +97,13 @@ export default function AuthCallback() {
 
         const returnTo = sessionStorage.getItem("swiggy_auth_return_to");
         sessionStorage.removeItem("swiggy_auth_return_to");
-        setLocation(returnTo || "/dashboard");
+
+        // Route new users to onboarding; returning completed users to returnTo or dashboard
+        if (result.user?.onboardingCompleted === false) {
+          setLocation("/onboarding");
+        } else {
+          setLocation(returnTo || "/dashboard");
+        }
       } catch (err: any) {
         console.error("[AUTH CALLBACK] Callback failure:", err);
         if (!active) return;

@@ -111,9 +111,10 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  let swiggyRes: any;
   try {
     // 1. Exchange authorization code for Swiggy access token using PKCE verifier
-    const swiggyRes = await fetch(SWIGGY_TOKEN_URL, {
+    swiggyRes = await fetch(SWIGGY_TOKEN_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -127,47 +128,66 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
         code_verifier,
       }),
     });
+  } catch (netErr: any) {
+    console.error("[Swiggy Token Exchange] Network communication failure:", netErr?.message ?? netErr);
+    res.status(502).json({ error: "Swiggy token service communication failure" });
+    return;
+  }
 
-    if (!swiggyRes.ok) {
-      const errorText = await swiggyRes.text();
-      console.warn(`[Swiggy Token Exchange] Failed (${swiggyRes.status}):`, errorText);
-      res.status(swiggyRes.status).json({
-        error: "Swiggy authorization failed",
-        details: errorText,
-      });
-      return;
-    }
+  if (!swiggyRes.ok) {
+    const errorText = await swiggyRes.text();
+    console.warn(`[Swiggy Token Exchange] Failed (${swiggyRes.status}):`, errorText);
+    res.status(swiggyRes.status).json({
+      error: "Swiggy authorization failed",
+      details: errorText,
+    });
+    return;
+  }
 
-    const data = (await swiggyRes.json()) as {
-      access_token: string;
-      token_type?: string;
-      expires_in?: number;
-      scope?: string;
-    };
+  let data: {
+    access_token: string;
+    token_type?: string;
+    expires_in?: number;
+    scope?: string;
+  };
+  try {
+    data = (await swiggyRes.json()) as any;
+  } catch (jsonErr: any) {
+    console.error("[Swiggy Token Exchange] Failed to parse response:", jsonErr?.message ?? jsonErr);
+    res.status(502).json({ error: "Invalid response from Swiggy token service" });
+    return;
+  }
 
-    if (!data.access_token) {
-      res.status(400).json({ error: "Swiggy token response missing access_token" });
-      return;
-    }
+  if (!data?.access_token) {
+    res.status(400).json({ error: "Swiggy token response missing access_token" });
+    return;
+  }
 
-    // 2. Extract validated Swiggy user identity strictly using documented JWT 'sub' claim
-    let swiggyUserId: string;
-    try {
-      swiggyUserId = extractSwiggyUserIdFromToken(data.access_token);
-    } catch (parseErr: any) {
-      console.error("[Swiggy Token Exchange] Failed to extract identity from token:", parseErr.message);
-      res.status(502).json({ error: "Invalid Swiggy identity token" });
-      return;
-    }
+  // 2. Extract validated Swiggy user identity strictly using documented JWT 'sub' claim
+  let swiggyUserId: string;
+  try {
+    swiggyUserId = extractSwiggyUserIdFromToken(data.access_token);
+  } catch (parseErr: any) {
+    console.error("[Swiggy Token Exchange] Failed to extract identity from token:", parseErr.message);
+    res.status(502).json({ error: "Invalid Swiggy identity token" });
+    return;
+  }
 
-    // 3. Find or auto-provision persistent NutriFlow user profile mapped to this Swiggy user
-    let [user] = await db
+  // 3. Find or auto-provision persistent NutriFlow user profile and store Swiggy token in database
+  let user: typeof userProfilesTable.$inferSelect;
+  const expiresInSec = data.expires_in || 432000;
+  const expiresAt = new Date(Date.now() + expiresInSec * 1000);
+
+  try {
+    const [existingUser] = await db
       .select()
       .from(userProfilesTable)
       .where(eq(userProfilesTable.swiggyUserId, swiggyUserId))
       .limit(1);
 
-    if (!user) {
+    if (existingUser) {
+      user = existingUser;
+    } else {
       const [created] = await db
         .insert(userProfilesTable)
         .values({
@@ -187,18 +207,13 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
       console.log(`[Swiggy Auth] Created new NutriFlow user for Swiggy user ${swiggyUserId} (${user.id})`);
     }
 
-    // 4. Securely store Swiggy access token server-side strictly mapped to this internal user UUID
-    // Swiggy v1 access tokens expire after 5 days (432,000s)
-    const expiresInSec = data.expires_in || 432000;
-    const expiresAt = new Date(Date.now() + expiresInSec * 1000);
-
-    const [existing] = await db
+    const [existingToken] = await db
       .select({ id: userSwiggyTokensTable.id })
       .from(userSwiggyTokensTable)
       .where(eq(userSwiggyTokensTable.userId, user.id))
       .limit(1);
 
-    if (existing) {
+    if (existingToken) {
       await db
         .update(userSwiggyTokensTable)
         .set({
@@ -208,7 +223,7 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
           expiresAt,
           updatedAt: new Date(),
         })
-        .where(eq(userSwiggyTokensTable.id, existing.id));
+        .where(eq(userSwiggyTokensTable.id, existingToken.id));
     } else {
       await db.insert(userSwiggyTokensTable).values({
         userId: user.id,
@@ -220,40 +235,48 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     }
 
     console.log(`[Swiggy Token Exchange] Stored Swiggy token for user ${user.id}`);
+  } catch (dbErr: any) {
+    console.error("[Swiggy Auth] Database persistence error:", dbErr?.message ?? dbErr);
+    res.status(500).json({ error: "Failed to persist user profile or Swiggy session" });
+    return;
+  }
 
-    // 5. Establish NutriFlow server-managed session via signed HttpOnly cookie
-    const sessionToken = createSessionToken({
+  // 4. Establish NutriFlow server-managed session via signed HttpOnly cookie
+  let sessionToken: string;
+  try {
+    sessionToken = createSessionToken({
       userId: user.id,
       swiggyUserId: user.swiggyUserId || swiggyUserId,
     });
-
-    res.cookie(SESSION_COOKIE_NAME, sessionToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production" || !!process.env.VERCEL,
-      sameSite: "lax",
-      path: "/",
-      maxAge: SESSION_MAX_AGE_MS,
-    });
-
-    // 6. Return safe profile confirmation to browser — RAW ACCESS TOKEN IS NEVER EXPOSED
-    res.json({
-      success: true,
-      connected: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        onboardingCompleted: user.onboardingCompleted,
-        goal: user.goal,
-        wellnessScore: user.wellnessScore,
-        streak: user.streak,
-      },
-      expiresAt: expiresAt.toISOString(),
-    });
-  } catch (err: any) {
-    console.error("[Swiggy Token Exchange] Network exception:", err?.message ?? err);
-    res.status(502).json({ error: "Swiggy token service communication failure" });
+  } catch (sessionErr: any) {
+    console.error("[Swiggy Auth] Session initialization error:", sessionErr?.message ?? sessionErr);
+    res.status(500).json({ error: "Failed to initialize user session" });
+    return;
   }
+
+  res.cookie(SESSION_COOKIE_NAME, sessionToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production" || !!process.env.VERCEL,
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_MAX_AGE_MS,
+  });
+
+  // 5. Return safe profile confirmation to browser — RAW ACCESS TOKEN IS NEVER EXPOSED
+  res.json({
+    success: true,
+    connected: true,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      onboardingCompleted: user.onboardingCompleted,
+      goal: user.goal,
+      wellnessScore: user.wellnessScore,
+      streak: user.streak,
+    },
+    expiresAt: expiresAt.toISOString(),
+  });
 }
 
 // POST /api/swiggy/oauth/callback (PUBLIC: Authenticated via PKCE code + verifier, NOT Supabase JWT)
