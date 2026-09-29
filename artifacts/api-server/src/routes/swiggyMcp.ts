@@ -174,13 +174,27 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
   }
 
   // 3. Find or auto-provision persistent NutriFlow user profile and store Swiggy token in database
-  let user: typeof userProfilesTable.$inferSelect;
+  let user: {
+    id: string;
+    swiggyUserId: string | null;
+    onboardingCompleted: boolean;
+    name: string;
+    email?: string | null;
+    goal?: string;
+    wellnessScore?: number;
+    streak?: number;
+  };
   const expiresInSec = data.expires_in || 432000;
   const expiresAt = new Date(Date.now() + expiresInSec * 1000);
 
   try {
     const [existingUser] = await db
-      .select()
+      .select({
+        id: userProfilesTable.id,
+        swiggyUserId: userProfilesTable.swiggyUserId,
+        onboardingCompleted: userProfilesTable.onboardingCompleted,
+        name: userProfilesTable.name,
+      })
       .from(userProfilesTable)
       .where(eq(userProfilesTable.swiggyUserId, swiggyUserId))
       .limit(1);
@@ -236,7 +250,12 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
 
     console.log(`[Swiggy Token Exchange] Stored Swiggy token for user ${user.id}`);
   } catch (dbErr: any) {
-    console.error("[Swiggy Auth] Database persistence error:", dbErr?.message ?? dbErr);
+    console.error("[Swiggy Auth] Database persistence error:", {
+      query: dbErr?.message,
+      cause: dbErr?.cause?.message ?? dbErr?.cause,
+      code: dbErr?.cause?.code ?? dbErr?.code,
+      detail: dbErr?.cause?.detail,
+    });
     res.status(500).json({ error: "Failed to persist user profile or Swiggy session" });
     return;
   }
@@ -269,11 +288,11 @@ async function handleTokenExchange(req: Request, res: Response): Promise<void> {
     user: {
       id: user.id,
       name: user.name,
-      email: user.email,
+      email: user.email ?? null,
       onboardingCompleted: user.onboardingCompleted,
-      goal: user.goal,
-      wellnessScore: user.wellnessScore,
-      streak: user.streak,
+      goal: user.goal ?? "Stay Healthy",
+      wellnessScore: user.wellnessScore ?? 72,
+      streak: user.streak ?? 0,
     },
     expiresAt: expiresAt.toISOString(),
   });
