@@ -783,7 +783,7 @@ Advanced Personalization
 
 ## Author
 
-**Sai Uma Devi Munagapaka**
+**MUNAGAPAKA SAI GNANENDRA**
 
 B.Tech --- Computer Science & Engineering (AI & ML)
 
