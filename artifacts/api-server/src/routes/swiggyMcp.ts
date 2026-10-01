@@ -345,7 +345,7 @@ router.post("/swiggy/mcp/get_addresses", requireAuth, async (req: Request, res: 
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Accept: "application/json",
+        Accept: "application/json, text/event-stream",
         Authorization: `Bearer ${userToken}`,
       },
       body: JSON.stringify(req.body || {}),
@@ -404,7 +404,7 @@ async function handleMcpToolCall(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Accept: "application/json",
+        Accept: "application/json, text/event-stream",
         Authorization: `Bearer ${userToken}`,
       },
       body: JSON.stringify({
