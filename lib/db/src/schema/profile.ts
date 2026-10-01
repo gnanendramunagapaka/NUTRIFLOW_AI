@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const userProfilesTable = pgTable("user_profiles", {
-  id: uuid("id").primaryKey(),
+  id: uuid("id").defaultRandom().primaryKey(),
   swiggyUserId: text("swiggy_user_id").unique(),
   name: text("name").notNull(),
   email: text("email").unique(),
