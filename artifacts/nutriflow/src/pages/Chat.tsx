@@ -3,368 +3,72 @@ import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent } from "@/components/ui/card";
-import { Send, Plus, MessageSquare, Flame, Dumbbell, Heart, Utensils, Check, Loader2, ShoppingCart, Sparkles } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import {
+  Send,
+  Plus,
+  MessageSquare,
+  Sparkles,
+  Loader2,
+  History,
+  Info,
+  ShieldCheck,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
-import { MOCK_PREVIOUS_CHATS } from "@/lib/mockData";
+import { ProfileContextIndicator } from "@/components/chat/ProfileContextIndicator";
+import { DomainQuickActions, DomainFilterStrip } from "@/components/chat/DomainQuickActions";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Chat Message Types ────────────────────────────────────────────────────────
 
-interface Recommendation {
-  mealTitle: string;
-  calories: number;
-  protein: number;
-  cuisine: string;
-  healthScore: number;
-  groceryItems: string[];
-  reason: string;
-}
-
-interface GroceryItem {
-  name: string;
-  category: string;
-  quantity: string;
-  unit: string;
-  nutritionNote?: string;
-}
-
-interface ParsedAIMessage {
-  text: string;
-  recommendation?: Recommendation;
-  wellnessInsight?: string;
-  groceryPlan?: GroceryItem[];
-}
-
-// ─── Content Parser ────────────────────────────────────────────────────────────
-
-function parseAIContent(content: string): { displayText: string; parsed: ParsedAIMessage | null } {
-  const trimmed = content.trim();
-
-  if (!trimmed) return { displayText: "", parsed: null };
-
-  // Not JSON — plain text response
-  if (!trimmed.startsWith("{")) {
-    return { displayText: trimmed, parsed: null };
-  }
-
-  // Try full JSON parse
-  try {
-    const obj = JSON.parse(trimmed) as ParsedAIMessage;
-    return { displayText: obj.text || "", parsed: obj };
-  } catch {
-    const match = trimmed.match(/"text"\s*:\s*"((?:[^"\\]|\\.)*)(?:"|$)/);
-    if (match && match[1]) {
-      let text = match[1];
-      try {
-        text = JSON.parse(`"${text}"`);
-      } catch {
-        text = text.replace(/\\n/g, "\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
-      }
-      return { displayText: text, parsed: null };
-    }
-    return { displayText: "", parsed: null };
-  }
-}
-
-// ─── AI Message Bubble ─────────────────────────────────────────────────────────
-
-function AIMessageBubble({
-  content,
-  onAddGroceries,
-}: {
+interface ChatMessage {
+  id: string;
+  role: "user" | "status" | "assistant";
   content: string;
-  onAddGroceries: (items: GroceryItem[]) => Promise<void>;
-}) {
-  const [added, setAdded] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const { toast } = useToast();
-  const { addToCart, setIsCartOpen } = useCart();
-  const [mealAdded, setMealAdded] = useState(false);
-  const [groceriesAdded, setGroceriesAdded] = useState(false);
+  timestamp?: string;
+}
 
-  const { displayText, parsed } = parseAIContent(content);
+// ─── Controlled Copilot Status Card ────────────────────────────────────────────
 
-  const handleAddIngredients = async (items: string[]) => {
-    setLoading(true);
-    try {
-      await onAddGroceries(
-        items.map((name) => ({ name, category: "Pantry", quantity: "1", unit: "unit" }))
-      );
-      setAdded(true);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddPlan = async (items: GroceryItem[]) => {
-    setLoading(true);
-    try {
-      await onAddGroceries(items);
-      setAdded(true);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddMealToCart = () => {
-    if (!parsed?.recommendation) return;
-    const rawPrice = Math.max(140, Math.min(320, ((parsed.recommendation.protein || 20) * 4) + 120)) || 180;
-    const price = Math.round(rawPrice);
-    
-    addToCart({
-      id: `meal-ai-${parsed.recommendation.mealTitle.toLowerCase().replace(/\s+/g, "-")}`,
-      name: parsed.recommendation.mealTitle,
-      price,
-      type: 'meal',
-      calories: parsed.recommendation.calories,
-      protein: parsed.recommendation.protein,
-      healthScore: parsed.recommendation.healthScore,
-      cuisine: parsed.recommendation.cuisine,
-      description: parsed.recommendation.reason,
-    });
-    setMealAdded(true);
-    toast({
-      title: "Added to Cart! 🛒",
-      description: `"${parsed.recommendation.mealTitle}" added to Swiggy commerce basket.`,
-    });
-    setIsCartOpen(true);
-  };
-
-  const handleAddGroceryPlanToCart = () => {
-    if (!parsed?.groceryPlan || parsed.groceryPlan.length === 0) return;
-    
-    parsed.groceryPlan.forEach((item) => {
-      addToCart({
-        id: `grocery-ai-${item.name.toLowerCase().replace(/\s+/g, "-")}`,
-        name: item.name,
-        price: 49,
-        type: 'grocery',
-        category: item.category,
-        unit: item.unit,
-        description: item.nutritionNote,
-      });
-    });
-    setGroceriesAdded(true);
-    toast({
-      title: "Grocery Items Added! 🛒",
-      description: `${parsed.groceryPlan.length} ingredients transferred to Swiggy Instamart pipeline.`,
-    });
-    setIsCartOpen(true);
-  };
-
+function CopilotStatusCard({ message }: { message?: string }) {
   return (
-    <div className="space-y-4 w-full">
-      {displayText ? (
-        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap text-left">{displayText}</p>
-      ) : !parsed ? (
-        <p className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap text-left">{content}</p>
-      ) : null}
-
-      {parsed?.wellnessInsight && (
-        <Card className="bg-emerald-50/60 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/50">
-          <CardContent className="p-4 flex items-start gap-3">
-            <div className="h-8 w-8 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0">
-              <Heart className="h-4 w-4 text-emerald-600 dark:text-emerald-400 fill-emerald-600 dark:fill-emerald-400" />
-            </div>
-            <div className="text-left">
-              <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">Copilot Insight</span>
-              <p className="text-sm text-emerald-900/90 dark:text-emerald-200/90 italic mt-0.5">{parsed.wellnessInsight}</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {parsed?.recommendation && (
-        <Card className="border border-emerald-100 dark:border-emerald-900 shadow-md rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-50/40 to-background dark:from-emerald-950/10 dark:to-background">
-          <div className="p-5 space-y-4 text-left">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
-                    Recommended Meal
-                  </span>
-                  <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
-                    ⚡ Powered by Swiggy
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-foreground mt-2">{parsed.recommendation.mealTitle}</h3>
-              </div>
-              <div className="flex gap-2 items-center">
-                {parsed.recommendation.cuisine && (
-                  <span className="text-xs bg-muted text-muted-foreground px-2.5 py-1 rounded-full font-medium">
-                    {parsed.recommendation.cuisine}
-                  </span>
-                )}
-                {parsed.recommendation.healthScore !== undefined && (
-                  <span className={cn(
-                    "text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1",
-                    parsed.recommendation.healthScore >= 80
-                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                      : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                  )}>
-                    <Heart className="h-3 w-3 fill-current" /> {parsed.recommendation.healthScore}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100/40 p-3 rounded-xl flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center shrink-0">
-                  <Flame className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Calories</p>
-                  <p className="text-sm font-bold text-amber-900 dark:text-amber-300">{parsed.recommendation.calories} kcal</p>
-                </div>
-              </div>
-              <div className="bg-blue-50/50 dark:bg-blue-950/10 border border-blue-100/40 p-3 rounded-xl flex items-center gap-3">
-                <div className="h-8 w-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
-                  <Dumbbell className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold">Protein</p>
-                  <p className="text-sm font-bold text-blue-900 dark:text-blue-300">{parsed.recommendation.protein}g</p>
-                </div>
-              </div>
-            </div>
-
-            {parsed.recommendation.reason && (
-              <p className="text-xs text-muted-foreground italic bg-muted/40 p-3 rounded-xl border border-border/30">
-                "{parsed.recommendation.reason}"
-              </p>
-            )}
-
-            {parsed.recommendation.groceryItems?.length > 0 && (
-              <div className="space-y-3">
-                <span className="text-xs font-semibold text-foreground/80 flex items-center gap-1.5">
-                  <Utensils className="h-3.5 w-3.5 text-emerald-600" /> Key Ingredients
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {parsed.recommendation.groceryItems.map((item, i) => (
-                    <span key={i} className="text-xs bg-muted/60 border border-border/70 px-2.5 py-1 rounded-lg">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={() => handleAddIngredients(parsed!.recommendation!.groceryItems)}
-                    disabled={loading || added}
-                    variant="outline"
-                    className="flex-1 rounded-xl h-10 font-medium transition-all border-emerald-200 text-emerald-800 hover:bg-emerald-50/50"
-                  >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : added ? <Check className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                    {added ? "Added ✓" : "Add to List"}
-                  </Button>
-                  <Button
-                    onClick={handleAddMealToCart}
-                    disabled={mealAdded}
-                    className="flex-1 rounded-xl h-10 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 transition-all hover-elevate"
-                  >
-                    <ShoppingCart className="h-4 w-4" />
-                    {mealAdded ? "Added ✓" : `Order Meal (₹${Math.round(Math.max(140, Math.min(320, ((parsed.recommendation.protein || 20) * 4) + 120)) || 180)})`}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-      )}
-
-      {parsed?.groceryPlan && parsed.groceryPlan.length > 0 && (
-        <Card className="border border-emerald-100 dark:border-emerald-900 shadow-md rounded-2xl overflow-hidden">
-          <div className="p-5 space-y-4 text-left">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider px-2 py-0.5 bg-emerald-100/60 dark:bg-emerald-900/30 rounded-full">
-                AI Grocery Plan
-              </span>
-              <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1">
-                ⚡ Powered by Swiggy
-              </span>
-            </div>
-            <div className="space-y-4 pt-1">
-              {Object.entries(
-                parsed.groceryPlan.reduce<Record<string, GroceryItem[]>>((acc, item) => {
-                  const cat = item.category || "Pantry";
-                  (acc[cat] ||= []).push(item);
-                  return acc;
-                }, {})
-              ).map(([category, items]) => (
-                <div key={category}>
-                  <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider border-b border-emerald-100/40 pb-1 mb-2">
-                    {category}
-                  </h4>
-                  <ul className="space-y-1.5">
-                    {items.map((item, i) => (
-                      <li key={i} className="flex items-start justify-between text-xs">
-                        <div>
-                          <span className="font-semibold text-foreground">{item.name}</span>
-                          {item.nutritionNote && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{item.nutritionNote}</p>
-                          )}
-                        </div>
-                        <span className="shrink-0 bg-muted text-muted-foreground px-2 py-0.5 rounded ml-3 font-semibold">
-                          {item.quantity} {item.unit}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => handleAddPlan(parsed!.groceryPlan!)}
-                disabled={loading || added}
-                variant="outline"
-                className="flex-1 rounded-xl h-10 font-medium transition-all border-emerald-200 text-emerald-800 hover:bg-emerald-50/50"
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : added ? <Check className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                {added ? "Confirmed ✓" : "Add to Checklist"}
-              </Button>
-              <Button
-                onClick={handleAddGroceryPlanToCart}
-                disabled={groceriesAdded}
-                className="flex-1 rounded-xl h-10 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 transition-all hover-elevate"
-              >
-                <ShoppingCart className="h-4 w-4" />
-                {groceriesAdded ? "All Added ✓" : `Order All (₹${parsed.groceryPlan.length * 49})`}
-              </Button>
-            </div>
-          </div>
-        </Card>
-      )}
+    <div className="flex w-full justify-start">
+      <div className="max-w-[95%] sm:max-w-[85%] w-full bg-muted/40 rounded-2xl p-4 border border-border/80 text-left space-y-2 shadow-2xs">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Info className="h-4 w-4 text-primary shrink-0" />
+          <span className="text-xs font-bold text-foreground">AI Copilot Status</span>
+          <span className="text-[10px] font-semibold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+            Phase 1 Foundation
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {message || "AI Copilot is being connected. Live AI generation, personalized meal recommendations, and Swiggy conversational actions will be enabled in Phase 2."}
+        </p>
+      </div>
     </div>
   );
 }
 
-// ─── Main Chat Page ────────────────────────────────────────────────────────────
+// ─── Main Chat Page Component ──────────────────────────────────────────────────
 
 export default function Chat() {
   const { toast } = useToast();
   const { user } = useAuth();
-  
+
   const [conversations, setConversations] = useState<any[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
-  
-  const [messages, setMessages] = useState<any[]>([]);
+  const [isMobileHistoryOpen, setIsMobileHistoryOpen] = useState(false);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
   const [input, setInput] = useState("");
-  const [streamingContent, setStreamingContent] = useState("");
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [isFallback, setIsFallback] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Load real user conversations from backend database
   const loadConversations = async () => {
     try {
       if (!user) {
@@ -392,21 +96,17 @@ export default function Chat() {
     }
   };
 
+  // Load messages for active conversation
   const loadMessages = async (convId: string) => {
     setLoadingMessages(true);
     try {
-      if (convId.startsWith("c-")) {
-        // Load messages from mock chats
-        const mockMatch = MOCK_PREVIOUS_CHATS.find(c => c.id === convId);
-        setMessages(mockMatch ? mockMatch.messages.map((m, i) => ({ id: `${convId}-${i}`, role: m.role, content: m.content })) : []);
-        setLoadingMessages(false);
-        return;
-      }
-
-      const res = await fetch(`/api/openai/conversations/${encodeURIComponent(convId)}/messages`, {
-        headers: { Accept: "application/json" },
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/openai/conversations/${encodeURIComponent(convId)}/messages`,
+        {
+          headers: { Accept: "application/json" },
+          credentials: "include",
+        }
+      );
 
       if (!res.ok) {
         setMessages([]);
@@ -414,7 +114,28 @@ export default function Chat() {
       }
 
       const data = await res.json();
-      setMessages(Array.isArray(data) ? data : []);
+      if (Array.isArray(data)) {
+        // Map messages: user messages display normally.
+        // Any mock/fallback assistant messages are displayed as controlled status states, not fake AI responses.
+        const mapped: ChatMessage[] = data.map((m: any) => {
+          if (m.role === "user") {
+            return {
+              id: String(m.id || Math.random()),
+              role: "user",
+              content: m.content,
+            };
+          }
+          // Assistant or fallback entries are shown as controlled UI status notices
+          return {
+            id: String(m.id || Math.random()),
+            role: "status",
+            content: "AI Copilot is being connected. Real AI responses will be enabled in Phase 2.",
+          };
+        });
+        setMessages(mapped);
+      } else {
+        setMessages([]);
+      }
     } catch (e) {
       console.warn("[Chat] loadMessages failed (non-critical):", e);
       setMessages([]);
@@ -425,7 +146,7 @@ export default function Chat() {
 
   useEffect(() => {
     loadConversations();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (activeId) {
@@ -439,8 +160,9 @@ export default function Chat() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, streamingContent]);
+  }, [messages, isSending]);
 
+  // Create new conversation
   const handleCreate = async () => {
     try {
       const res = await fetch("/api/openai/conversations", {
@@ -448,26 +170,27 @@ export default function Chat() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          title: "New Conversation",
+          title: "New Wellness Chat",
         }),
       });
 
       if (!res.ok) throw new Error("Failed to create conversation");
       const data = await res.json();
-      setConversations(old => [data, ...old]);
+      setConversations((old) => [data, ...old]);
       setActiveId(data.id);
+      setMessages([]);
+      setIsMobileHistoryOpen(false);
     } catch (e) {
       console.error("Failed to create conversation:", e);
       toast({ title: "Failed to create conversation", variant: "destructive" });
     }
   };
 
-  // Click handler for prompt chips
+  // Quick prompt handler: sets input and initializes a conversation if needed
   const handleQuickPrompt = async (promptText: string) => {
-    if (isStreaming) return;
+    if (isSending) return;
     let targetConvId = activeId;
-    
-    // Create new conversation if none is active
+
     if (!targetConvId) {
       try {
         const title = promptText.length > 25 ? promptText.slice(0, 25) + "..." : promptText;
@@ -480,7 +203,7 @@ export default function Chat() {
 
         if (!res.ok) throw new Error("Failed to initialize conversation");
         const data = await res.json();
-        setConversations(old => [data, ...old]);
+        setConversations((old) => [data, ...old]);
         targetConvId = data.id;
         setActiveId(data.id);
       } catch (e) {
@@ -490,35 +213,23 @@ export default function Chat() {
     }
 
     setInput(promptText);
-    setTimeout(() => {
-      const form = document.getElementById("chat-form") as HTMLFormElement;
-      if (form) form.requestSubmit();
-    }, 100);
   };
 
+  // Send message handler
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !activeId || isStreaming) return;
+    if (!input.trim() || isSending) return;
 
-    const userMessage = input;
+    const userText = input.trim();
     setInput("");
-    setIsStreaming(true);
-    setStreamingContent("");
+    setIsSending(true);
 
-    const optimisticUserMsg = {
-      id: Math.random().toString(),
-      role: "user",
-      content: userMessage,
-      conversationId: activeId
-    };
+    let currentConvId = activeId;
 
-    try {
-      setMessages(old => [...(old || []), optimisticUserMsg]);
-
-      // If active conversation is a mock, convert it to a database conversation first
-      let currentConvId = activeId;
-      if (activeId.startsWith("c-")) {
-        const title = userMessage.length > 25 ? userMessage.slice(0, 25) + "..." : userMessage;
+    // Create conversation on the fly if none is selected
+    if (!currentConvId) {
+      try {
+        const title = userText.length > 25 ? userText.slice(0, 25) + "..." : userText;
         const res = await fetch("/api/openai/conversations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -526,251 +237,322 @@ export default function Chat() {
           body: JSON.stringify({ title }),
         });
 
-        if (!res.ok) throw new Error("Failed to initialize conversation");
-        const conv = await res.json();
-        setConversations(old => [conv, ...old.filter(c => c.id !== activeId)]);
-        currentConvId = conv.id;
-        setActiveId(conv.id);
-      }
-
-      const chatHistoryContext = messages.slice(-10).map((m: any) => ({
-        role: m.role,
-        content: m.content
-      }));
-
-      const res = await fetch(`/api/openai/conversations/${currentConvId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          content: userMessage,
-          history: chatHistoryContext
-        }),
-      });
-
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      if (!res.body) throw new Error("No response body");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMsg = "";
-      let wasFallback = false;
-      let streamDone = false;
-
-      while (!streamDone) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n").filter(l => l.trim());
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-            if (data.done) {
-              streamDone = true;
-              if (data.fallback) wasFallback = true;
-              break;
-            }
-            if (data.error) {
-              console.error("[Chat] Stream error:", data.error);
-              streamDone = true;
-              break;
-            }
-            if (data.content) {
-              if (data.fallback) wasFallback = true;
-              assistantMsg += data.content;
-              setStreamingContent(assistantMsg);
-            }
-          } catch {
-            // skip malformed line
-          }
+        if (res.ok) {
+          const conv = await res.json();
+          setConversations((old) => [conv, ...old]);
+          currentConvId = conv.id;
+          setActiveId(conv.id);
         }
+      } catch (e) {
+        console.error("Failed to auto-create conversation:", e);
       }
+    }
 
-      setIsFallback(wasFallback);
+    const optimisticUserMsg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content: userText,
+    };
 
-      // Reload persisted messages from backend
-      await loadMessages(currentConvId);
+    const controlledStatusMsg: ChatMessage = {
+      id: `status-${Date.now()}`,
+      role: "status",
+      content: "AI Copilot is being connected. Live AI generation, personalized meal recommendations, and Swiggy conversational actions will be enabled in Phase 2.",
+    };
 
-      if (wasFallback) {
-        toast({
-          title: "Demo mode active",
-          description: "Gemini API quota reached. Showing smart example responses.",
+    // Render user message and controlled status state immediately
+    setMessages((old) => [...old, optimisticUserMsg, controlledStatusMsg]);
+
+    try {
+      // Save user message to backend conversation history if currentConvId exists
+      if (currentConvId) {
+        await fetch(`/api/openai/conversations/${currentConvId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            content: userText,
+          }),
+        }).catch((err) => {
+          console.warn("[Chat] Background message save non-critical:", err);
         });
       }
-    } catch (err: any) {
-      console.error("Chat error:", err);
-      toast({ title: "Failed to send message", description: err.message, variant: "destructive" });
-      setMessages(old => (old || []).filter((m: any) => m.id !== optimisticUserMsg.id));
     } finally {
-      setIsStreaming(false);
-      setStreamingContent("");
+      setIsSending(false);
     }
   };
 
-  const addGroceries = async (items: GroceryItem[]) => {
-    try {
-      const res = await fetch("/api/grocery/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ items }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to add items to grocery list");
-      }
-
-      toast({ title: "✅ Items added to your grocery list!" });
-    } catch (e: any) {
-      console.error("Failed to add groceries from chat:", e);
-      toast({ title: "Failed to add items", description: e.message, variant: "destructive" });
-    }
-  };
-
-  // Render combined DB and mock conversations in sidebar
-  const combinedConversations = conversations && conversations.length > 0
-    ? [...conversations, ...MOCK_PREVIOUS_CHATS.filter(mc => !conversations.some(c => c.title === mc.title))]
-    : MOCK_PREVIOUS_CHATS;
+  const activeConversationTitle =
+    conversations.find((c) => c.id === activeId)?.title || "AI Copilot";
 
   return (
-    <Layout>
-      <div className="flex h-[calc(100vh-4rem)] bg-background">
-        {/* Sidebar */}
-        <div className="w-64 border-r hidden md:flex flex-col bg-muted/10">
-          <div className="p-3 border-b">
-            <Button onClick={handleCreate} className="w-full justify-start gap-2 h-9 font-semibold" variant="outline">
-              <Plus className="h-4 w-4" />
-              New Chat
+    <Layout contentClassName="p-0 pb-16 md:pb-0" fullWidth={true}>
+      <div className="flex h-[calc(100dvh-3.5rem-4rem)] md:h-[calc(100dvh-4rem)] bg-background overflow-hidden">
+        {/* ─── Desktop Left Sidebar (Conversation History) ─── */}
+        <aside className="w-64 lg:w-72 border-r border-border/70 hidden md:flex flex-col bg-muted/15">
+          <div className="p-3.5 border-b border-border/70 flex items-center justify-between gap-2">
+            <Button
+              onClick={handleCreate}
+              className="w-full justify-start gap-2 h-9 font-semibold rounded-xl text-xs"
+              variant="outline"
+            >
+              <Plus className="h-4 w-4 text-primary" />
+              <span>New Conversation</span>
             </Button>
           </div>
+
           <ScrollArea className="flex-1 p-2">
             {loadingConversations ? (
               <div className="p-4 text-center text-xs text-muted-foreground flex items-center justify-center gap-1.5">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading chats...
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Loading chats...</span>
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="p-4 text-center text-xs text-muted-foreground leading-relaxed">
+                No saved conversations yet. Start a new chat to begin.
               </div>
             ) : (
-              combinedConversations?.map((c) => (
-                <div
+              conversations.map((c) => (
+                <button
                   key={c.id}
+                  type="button"
                   onClick={() => setActiveId(c.id)}
                   className={cn(
-                    "p-3 mb-1 rounded-lg cursor-pointer flex items-center gap-2 text-sm transition-all duration-200",
+                    "w-full p-2.5 mb-1 rounded-xl cursor-pointer flex items-center gap-2 text-xs transition-all text-left",
                     activeId === c.id
-                      ? "bg-primary/10 text-primary font-bold shadow-2xs"
-                      : "hover:bg-muted text-foreground/75"
+                      ? "bg-primary/10 text-primary font-bold shadow-2xs border border-primary/20"
+                      : "hover:bg-muted text-muted-foreground hover:text-foreground"
                   )}
                 >
-                  <MessageSquare className="h-4 w-4 shrink-0 text-emerald-600" />
-                  <span className="truncate text-left">{c.title}</span>
-                </div>
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+                  <span className="truncate flex-1">{c.title}</span>
+                </button>
               ))
             )}
           </ScrollArea>
-        </div>
+        </aside>
 
-        {/* Chat Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-5">
-            {loadingMessages && activeId ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                <Loader2 className="h-4.5 w-4.5 animate-spin mr-2" /> Loading messages...
+        {/* ─── Main Chat Window ─── */}
+        <section className="flex-1 flex flex-col min-w-0 bg-background relative">
+          {/* Header Bar */}
+          <header className="border-b border-border/70 px-4 py-2.5 bg-background/95 backdrop-blur-xs flex items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Sparkles className="h-4 w-4" />
               </div>
-            ) : !messages?.length && !isStreaming ? (
-              <div className="h-full max-w-xl mx-auto flex flex-col items-center justify-center text-center space-y-6">
-                <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center shadow-inner relative">
-                  <div className="absolute inset-0 rounded-full bg-primary/5 animate-pulse" />
-                  <Sparkles className="h-7 w-7 text-primary animate-bounce duration-1000" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <h1 className="text-sm font-bold text-foreground truncate">
+                    NutriFlow Copilot
+                  </h1>
+                  <span className="text-[10px] font-semibold bg-primary/10 text-primary px-1.5 py-0.2 rounded-md">
+                    Wellness AI
+                  </span>
                 </div>
-                <div className="space-y-2">
-                  <h2 className="text-xl font-extrabold text-foreground tracking-tight">
-                    Ask your AI Wellness Co-Pilot
-                  </h2>
-                  <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-                    Plan healthy diets, generate smart Instamart shopping lists, or fetch macro-balanced meals near you.
-                  </p>
-                </div>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {activeId ? activeConversationTitle : "Your personalized nutrition assistant"}
+                </p>
+              </div>
+            </div>
 
-                {/* Quick Start prompts chips */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full pt-4">
-                  {[
-                    { text: "Order a high protein dinner under ₹300", desc: "Keto salads, gym dinners" },
-                    { text: "Suggest groceries for a diabetic diet", desc: "Instamart list with low glycemic items" },
-                    { text: "Plan meals for muscle gain", desc: "7-day customized protein budgets" },
-                    { text: "Find healthy breakfast options nearby", desc: "Oats, millet idlis, avo toast" }
-                  ].map((p, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleQuickPrompt(p.text)}
-                      className="p-3.5 text-left rounded-xl border border-border/60 hover:border-primary/50 bg-card hover:bg-primary/[0.01] transition-all hover:scale-101 text-xs shadow-2xs"
+            <div className="flex items-center gap-1.5">
+              {/* Mobile History Drawer Trigger */}
+              <Sheet open={isMobileHistoryOpen} onOpenChange={setIsMobileHistoryOpen}>
+                <SheetTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="md:hidden h-8 px-2.5 text-xs rounded-xl gap-1.5 border-border/80"
+                    aria-label="View Chat History"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    <span>Chats</span>
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="left" className="w-72 p-0 flex flex-col">
+                  <SheetHeader className="p-4 border-b border-border/70 text-left">
+                    <SheetTitle className="text-sm font-bold flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-primary" />
+                      <span>Past Conversations</span>
+                    </SheetTitle>
+                  </SheetHeader>
+                  <div className="p-3 border-b border-border/60">
+                    <Button
+                      onClick={handleCreate}
+                      className="w-full justify-start gap-2 h-9 text-xs rounded-xl"
+                      variant="outline"
                     >
-                      <p className="font-bold text-foreground">{p.text}</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{p.desc}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              messages?.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={cn("flex w-full", msg.role === "user" ? "justify-end" : "justify-start")}
-                >
-                  {msg.role === "user" ? (
-                    <div className="max-w-[75%] px-4 py-3 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground text-sm font-semibold leading-relaxed shadow-sm text-left">
-                      {msg.content}
-                    </div>
-                  ) : (
-                    <div className="max-w-[85%] w-full bg-muted rounded-2xl rounded-tl-sm px-4 py-3 border border-border/30">
-                      <AIMessageBubble content={msg.content} onAddGroceries={addGroceries} />
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
+                      <Plus className="h-3.5 w-3.5 text-primary" />
+                      <span>New Chat</span>
+                    </Button>
+                  </div>
+                  <ScrollArea className="flex-1 p-2">
+                    {conversations.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-muted-foreground leading-relaxed">
+                        No saved conversations yet. Start a new chat to begin.
+                      </div>
+                    ) : (
+                      conversations.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveId(c.id);
+                            setIsMobileHistoryOpen(false);
+                          }}
+                          className={cn(
+                            "w-full p-2.5 mb-1 rounded-xl flex items-center gap-2 text-xs transition-all text-left",
+                            activeId === c.id
+                              ? "bg-primary/10 text-primary font-bold border border-primary/20"
+                              : "hover:bg-muted text-muted-foreground"
+                          )}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5 shrink-0 text-primary/70" />
+                          <span className="truncate flex-1">{c.title}</span>
+                        </button>
+                      ))
+                    )}
+                  </ScrollArea>
+                </SheetContent>
+              </Sheet>
 
-            {/* Streaming bubble */}
-            {isStreaming && (
-              <div className="flex w-full justify-start animate-pulse">
-                <div className="max-w-[85%] w-full bg-muted rounded-2xl rounded-tl-sm px-4 py-3 border border-border/30">
-                  {streamingContent ? (
-                    <AIMessageBubble content={streamingContent} onAddGroceries={addGroceries} />
-                  ) : (
-                    <div className="flex items-center gap-2 text-muted-foreground text-sm font-semibold">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Thinking...</span>
-                    </div>
-                  )}
-                  <span className="inline-block h-4 w-0.5 ml-0.5 bg-emerald-500 animate-pulse" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Input Panel */}
-          <div className="p-4 border-t bg-background">
-            <form id="chat-form" onSubmit={handleSend} className="max-w-3xl mx-auto flex items-center gap-2 relative">
-              <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={activeId ? "Ask about nutrition, meals, grocery planning..." : "Choose a chat or click a prompt above to start..."}
-                className="pr-12 py-6 rounded-full shadow-inner text-sm"
-                disabled={!activeId || isStreaming}
-              />
+              {/* New Chat Button for desktop / quick action */}
               <Button
-                type="submit"
-                size="icon"
-                className="absolute right-2 h-10 w-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all hover:scale-105"
-                disabled={!input.trim() || !activeId || isStreaming}
+                variant="outline"
+                size="sm"
+                onClick={handleCreate}
+                className="hidden md:inline-flex h-8 px-2.5 text-xs rounded-xl gap-1 border-border/80"
+                title="Start a new chat"
               >
-                {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                <Plus className="h-3.5 w-3.5" />
+                <span>New</span>
               </Button>
-            </form>
+            </div>
+          </header>
+
+          {/* Profile Context Indicator */}
+          <ProfileContextIndicator />
+
+          {/* Conversation Thread / Welcome Area */}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+            <div className="max-w-3xl mx-auto w-full space-y-4">
+              {loadingMessages && activeId ? (
+                <div className="flex items-center justify-center py-16 text-muted-foreground text-xs sm:text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin mr-2 text-primary" />
+                  <span>Loading conversation...</span>
+                </div>
+              ) : !messages?.length && !isSending ? (
+                /* ─── Copilot Welcome / Empty State ─── */
+                <div className="py-6 sm:py-10 flex flex-col items-center justify-center text-center space-y-6">
+                  {/* Avatar Icon */}
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary/20 via-primary/10 to-primary/5 flex items-center justify-center shadow-inner border border-primary/20">
+                      <Sparkles className="h-8 w-8 text-primary" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 max-w-md mx-auto">
+                    <h2 className="text-xl sm:text-2xl font-extrabold text-foreground tracking-tight">
+                      Hi, I'm your NutriFlow Copilot
+                    </h2>
+                    <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                      I can help you make everyday food decisions, plan Instamart grocery baskets, and discover healthy dining options.
+                    </p>
+                  </div>
+
+                  {/* Profile Alignment Note */}
+                  {user?.goal && (
+                    <div className="inline-flex items-center gap-1.5 bg-muted/60 text-muted-foreground px-3 py-1 rounded-full text-[11px] font-medium border border-border/60">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                      <span>Configured for your "{user.goal}" goal</span>
+                    </div>
+                  )}
+
+                  {/* Domain Quick Actions Prompt Cards */}
+                  <div className="w-full pt-2">
+                    <DomainQuickActions onSelectPrompt={handleQuickPrompt} />
+                  </div>
+                </div>
+              ) : (
+                /* ─── Message Bubbles ─── */
+                messages.map((msg) => (
+                  <div
+                    key={msg.id}
+                    className={cn(
+                      "flex w-full",
+                      msg.role === "user" ? "justify-end" : "justify-start"
+                    )}
+                  >
+                    {msg.role === "user" ? (
+                      <div className="max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl rounded-tr-xs bg-primary text-primary-foreground text-xs sm:text-sm font-medium leading-relaxed shadow-2xs text-left">
+                        {msg.content}
+                      </div>
+                    ) : (
+                      <CopilotStatusCard message={msg.content} />
+                    )}
+                  </div>
+                ))
+              )}
+
+              {/* ─── Sending Indicator ─── */}
+              {isSending && (
+                <div className="flex w-full justify-start">
+                  <div className="max-w-[95%] sm:max-w-[85%] w-full bg-card rounded-2xl rounded-tl-xs p-3.5 border border-border/80 shadow-2xs text-left">
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs font-medium">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                      <span>Processing...</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+
+          {/* ─── Message Composer ─── */}
+          <footer className="p-3 sm:p-4 border-t border-border/70 bg-background/95 backdrop-blur-xs shrink-0">
+            <div className="max-w-3xl mx-auto space-y-2">
+              {/* Quick Prompt Strip */}
+              <DomainFilterStrip onSelectPrompt={handleQuickPrompt} />
+
+              {/* Form Input */}
+              <form
+                id="chat-form"
+                onSubmit={handleSend}
+                className="flex items-center gap-2 relative"
+              >
+                <Input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={
+                    activeId
+                      ? "Ask NutriFlow anything about food or wellness..."
+                      : "Type a question or pick a prompt above..."
+                  }
+                  className="pr-12 py-5 rounded-2xl text-xs sm:text-sm bg-card border-border/80 focus-visible:ring-primary shadow-2xs"
+                  disabled={isSending}
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="absolute right-1.5 h-8.5 w-8.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground shadow-2xs transition-all disabled:opacity-40"
+                  disabled={!input.trim() || isSending}
+                  aria-label="Send Message"
+                >
+                  {isSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </form>
+
+              {/* Safety & Medical Disclaimer */}
+              <p className="text-[10px] text-center text-muted-foreground leading-normal px-2">
+                NutriFlow Copilot provides general wellness information. For medical or allergy-specific advice, consult a healthcare professional.
+              </p>
+            </div>
+          </footer>
+        </section>
       </div>
     </Layout>
   );

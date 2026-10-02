@@ -10,6 +10,7 @@ import Dashboard from "@/pages/Dashboard";
 import Chat from "@/pages/Chat";
 import Discover from "@/pages/Discover";
 import Grocery from "@/pages/Grocery";
+import Dineout from "@/pages/Dineout";
 import Profile from "@/pages/Profile";
 import VerifyEmail from "@/pages/VerifyEmail";
 import AuthCallback from "@/pages/AuthCallback";
@@ -38,6 +39,7 @@ const DashboardPage = () => <ProtectedRoute component={Dashboard} />;
 const ChatPage = () => <ProtectedRoute component={Chat} />;
 const DiscoverPage = () => <ProtectedRoute component={Discover} />;
 const GroceryPage = () => <ProtectedRoute component={Grocery} />;
+const DineoutPage = () => <ProtectedRoute component={Dineout} />;
 const ProfilePage = () => <ProtectedRoute component={Profile} />;
 const CheckoutPage = () => <ProtectedRoute component={Checkout} />;
 const OrderConfirmationPage = () => <ProtectedRoute component={OrderConfirmation} />;
@@ -55,6 +57,7 @@ function Router() {
       <Route path="/chat" component={ChatPage} />
       <Route path="/discover" component={DiscoverPage} />
       <Route path="/grocery" component={GroceryPage} />
+      <Route path="/dineout" component={DineoutPage} />
       <Route path="/profile" component={ProfilePage} />
       <Route path="/checkout" component={CheckoutPage} />
       <Route path="/order-confirmation" component={OrderConfirmationPage} />

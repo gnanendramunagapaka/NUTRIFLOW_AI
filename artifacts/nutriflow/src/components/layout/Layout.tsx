@@ -1,15 +1,36 @@
 import { ReactNode } from "react";
-import { Navbar } from "./Navbar";
-import { CartDrawer } from "../cart/CartDrawer";
+import { AppShell } from "./AppShell";
 
-export function Layout({ children }: { children: ReactNode }) {
+export interface LayoutProps {
+  children: ReactNode;
+  title?: string;
+  className?: string;
+  contentClassName?: string;
+  fullWidth?: boolean;
+}
+
+/**
+ * NutriFlow Global App Layout wrapper.
+ * Defaults fullWidth=true so existing child page containers control their internal margins
+ * while inheriting unified TopBar, BottomNav, and safe-padding AppShell structure.
+ */
+export function Layout({
+  children,
+  title,
+  className,
+  contentClassName,
+  fullWidth = true,
+}: LayoutProps) {
   return (
-    <div className="min-h-[100dvh] flex flex-col bg-background">
-      <Navbar />
-      <main className="flex-1">
-        {children}
-      </main>
-      <CartDrawer />
-    </div>
+    <AppShell
+      title={title}
+      className={className}
+      contentClassName={contentClassName}
+      fullWidth={fullWidth}
+    >
+      {children}
+    </AppShell>
   );
 }
+
+export { AppShell };

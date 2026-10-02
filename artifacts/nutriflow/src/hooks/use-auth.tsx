@@ -221,32 +221,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data.budget !== undefined) profileUpdates.budget = data.budget;
 
       if (Object.keys(profileUpdates).length > 0) {
-        await fetch("/api/profile", {
+        const res = await fetch("/api/profile", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify(profileUpdates),
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error || "Failed to save profile updates to server");
+        }
       }
     } catch (err) {
       console.warn("[Auth] updateOnboarding background sync failed:", err);
+      throw err;
     }
   };
 
   const completeOnboarding = async (): Promise<void> => {
-    if (user) {
-      setUser({ ...user, onboardingCompleted: true });
+    const res = await fetch("/api/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ onboardingCompleted: true }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData?.error || "Failed to mark onboarding as completed on server");
     }
 
-    try {
-      await fetch("/api/profile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ onboardingCompleted: true }),
-      });
-    } catch (err) {
-      console.warn("[Auth] completeOnboarding sync failed:", err);
+    if (user) {
+      setUser({ ...user, onboardingCompleted: true });
     }
   };
 

@@ -1,29 +1,69 @@
+import { useState, useEffect, useMemo } from "react";
 import { Layout } from "@/components/layout/Layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  PageContainer,
+  SectionHeader,
+  AppCard,
+  PrimaryButton,
+  SecondaryButton,
+  Pill,
+} from "@/components/layout/primitives";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Sparkles, Calendar, CheckCircle2, ShoppingCart, Clock, ShieldAlert } from "lucide-react";
-import { useState, useEffect } from "react";
-import { useToast } from "@/hooks/use-toast";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Search,
+  X,
+  ShoppingBag,
+  Clock,
+  CheckCircle2,
+  RefreshCw,
+  ListChecks,
+  Sparkles,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import { MOCK_INSTAMART_GROCERIES } from "@/lib/mockData";
 
+import { ExploreDomainTabs } from "@/components/food/ExploreDomainTabs";
+import {
+  InstamartProductCard,
+  InstamartProductData,
+} from "@/components/instamart/InstamartProductCard";
+import { InstamartProductDetailSheet } from "@/components/instamart/InstamartProductDetailSheet";
+
+const INSTAMART_CATEGORIES = [
+  { label: "All", value: "all" },
+  { label: "Dairy", value: "Dairy" },
+  { label: "Fruits & Vegetables", value: "Produce" },
+  { label: "Staples", value: "Grains" },
+  { label: "Snacks", value: "Snacks" },
+  { label: "Beverages", value: "Beverages" },
+  { label: "Breakfast", value: "Breakfast" },
+  { label: "Pantry", value: "Pantry" },
+];
+
 export default function Grocery() {
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [selectedProduct, setSelectedProduct] = useState<InstamartProductData | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"catalog" | "checklist">("catalog");
+
+  const { addToCart, setIsCartOpen, items: cartItems } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
-  const { addToCart, setIsCartOpen } = useCart();
-  
-  const [list, setList] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
 
-  const loadGroceryList = async () => {
-    setIsLoading(true);
+  const [dbChecklist, setDbChecklist] = useState<any[]>([]);
+  const [loadingChecklist, setLoadingChecklist] = useState(true);
+
+  // Load database grocery checklist
+  const loadChecklist = async () => {
     try {
       if (!user) {
-        loadDefaultChecklist();
+        setDbChecklist([]);
         return;
       }
 
@@ -33,380 +73,337 @@ export default function Grocery() {
       });
 
       if (!res.ok) {
-        loadDefaultChecklist();
+        setDbChecklist([]);
         return;
       }
 
       const data = await res.json();
-      if (!data || !data.items || data.items.length === 0) {
-        loadDefaultChecklist();
-        return;
-      }
-
-      const mappedItems = (data.items || []).map((row: any) => {
-        const mockMatch = MOCK_INSTAMART_GROCERIES.find(m => m.name.toLowerCase().includes(row.name.toLowerCase()));
-        return {
-          id: row.id,
-          name: row.name,
-          category: row.category || "Pantry",
-          quantity: row.quantity || "1",
-          unit: row.unit || "unit",
-          isChecked: row.is_checked || false,
-          nutritionNote: row.nutrition_note || null,
-          price: mockMatch ? (mockMatch.discountPrice || mockMatch.price) : 49,
-        };
-      });
-
-      setList({
-        id: data.id,
-        weekOf: data.weekOf || new Date().toISOString().split("T")[0],
-        items: mappedItems,
-        totalItems: mappedItems.length,
-        checkedItems: mappedItems.filter((i: any) => i.isChecked).length,
-      });
+      setDbChecklist(data?.items || []);
     } catch (e) {
-      console.warn("[Grocery] loadGroceryList failed (non-critical):", e);
-      loadDefaultChecklist();
+      console.warn("[Grocery] loadChecklist non-critical:", e);
+      setDbChecklist([]);
     } finally {
-      setIsLoading(false);
+      setLoadingChecklist(false);
     }
-  };
-
-  const loadDefaultChecklist = () => {
-    // Populate rich defaults if user has no DB plan
-    const defaultItems = MOCK_INSTAMART_GROCERIES.slice(0, 5).map((row, idx) => ({
-      id: `default-${idx}`,
-      name: row.name,
-      category: row.category,
-      quantity: row.quantity,
-      unit: row.unit,
-      isChecked: false,
-      nutritionNote: row.nutritionNote,
-      price: row.discountPrice || row.price,
-    }));
-    setList({
-      id: "default-plan",
-      weekOf: new Date().toISOString().split("T")[0],
-      items: defaultItems,
-      totalItems: defaultItems.length,
-      checkedItems: 0,
-    });
   };
 
   useEffect(() => {
-    loadGroceryList();
-  }, []);
+    loadChecklist();
+  }, [user]);
 
-  const handleToggle = async (id: string | number) => {
-    if (!list) return;
-    const targetItem = list.items.find((i: any) => i.id === id);
-    if (!targetItem) return;
-
-    // Optimistic update
-    const updatedItems = list.items.map((i: any) =>
-      i.id === id ? { ...i, isChecked: !i.isChecked } : i
+  // Toggle checklist item
+  const handleToggleChecklist = async (item: any) => {
+    const updated = dbChecklist.map((i) =>
+      i.id === item.id ? { ...i, isChecked: !i.isChecked } : i
     );
-    setList({
-      ...list,
-      items: updatedItems,
-      checkedItems: updatedItems.filter((i: any) => i.isChecked).length,
-    });
-
-    if (String(id).startsWith("default-")) return; // skip DB write for mock defaults
+    setDbChecklist(updated);
 
     try {
-      await fetch(`/api/grocery/item/${encodeURIComponent(String(id))}`, {
+      await fetch(`/api/grocery/item/${encodeURIComponent(String(item.id))}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ isChecked: !targetItem.isChecked }),
+        body: JSON.stringify({ isChecked: !item.isChecked }),
       });
     } catch (e) {
-      console.error("Failed to toggle grocery check state:", e);
+      console.error("Failed to toggle grocery item:", e);
     }
   };
 
-  const handleGenerate = async () => {
-    setIsGenerating(true);
-    try {
-      const goal = user?.goal || "Stay Healthy";
-      const dietaryPreferences = user?.dietaryPreferences || [];
-      const budget = user?.budget ? String(user.budget) : undefined;
+  // Filter Instamart Products
+  const filteredProducts: InstamartProductData[] = useMemo(() => {
+    return MOCK_INSTAMART_GROCERIES.map((p) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      quantity: p.quantity,
+      unit: p.unit,
+      price: p.price,
+      discountPrice: p.discountPrice,
+      discountText: p.discountText,
+      inStock: p.inStock,
+      imageUrl: p.imageUrl,
+      deliveryTime: p.deliveryTime || undefined,
+      description: p.nutritionNote || "Fresh grocery item delivered via Swiggy Instamart",
+    })).filter((p) => {
+      const matchesCategory =
+        activeCategory === "all" ||
+        p.category.toLowerCase().includes(activeCategory.toLowerCase());
 
-      const res = await fetch("/api/grocery/plan", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          goal,
-          dietaryPreferences,
-          budget,
-        }),
-      });
+      const matchesSearch =
+        !search ||
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.category.toLowerCase().includes(search.toLowerCase());
 
-      if (!res.ok) throw new Error("Failed to generate plan");
+      return matchesCategory && matchesSearch;
+    });
+  }, [activeCategory, search]);
 
-      toast({ title: "Grocery list generated!" });
-      await loadGroceryList();
-    } catch (e: any) {
-      console.error("Failed to generate grocery list:", e);
-      toast({ title: "Failed to generate list", description: e.message, variant: "destructive" });
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleAddItemToCart = (item: any) => {
+  const handleAddToCart = (product: InstamartProductData) => {
     addToCart({
-      id: `grocery-${item.id}`,
-      name: item.name,
-      price: item.price || 49,
-      type: 'grocery',
-      category: item.category,
-      unit: item.unit,
-      description: item.nutritionNote || "Fresh grocery item",
+      id: `grocery-${product.id}`,
+      name: product.name,
+      price: product.discountPrice || product.price,
+      type: "grocery",
+      category: product.category,
+      unit: product.unit,
+      description: product.description,
+      imageUrl: product.imageUrl,
     });
+
     toast({
-      title: "Added to Cart! 🛒",
-      description: `"${item.name}" added to Swiggy Instamart basket.`,
+      title: "Added to Grocery Basket 🛒",
+      description: `"${product.name}" added to Swiggy Instamart basket.`,
     });
     setIsCartOpen(true);
   };
 
-  const handleAddAllToCart = () => {
-    if (!list || list.items.length === 0) return;
-    list.items.forEach((item: any) => {
-      addToCart({
-        id: `grocery-${item.id}`,
-        name: item.name,
-        price: item.price || 49,
-        type: 'grocery',
-        category: item.category,
-        unit: item.unit,
-        description: item.nutritionNote || "Fresh grocery item",
-      });
-    });
-    toast({
-      title: "All Items Added! 🛒",
-      description: `${list.items.length} items added to your Swiggy Instamart basket.`,
-    });
-    setIsCartOpen(true);
+  const handleOpenProduct = (product: InstamartProductData) => {
+    setSelectedProduct(product);
+    setIsDetailOpen(true);
   };
-
-  // Group items by category
-  const groupedItems = (list?.items || []).reduce((acc: Record<string, any[]>, item: any) => {
-    if (!acc[item.category]) acc[item.category] = [];
-    acc[item.category].push(item);
-    return acc;
-  }, {} as Record<string, any[]>);
-
-  const totalCost = list?.items.reduce((sum: number, item: any) => sum + (item.price || 49), 0) || 0;
 
   return (
     <Layout>
-      <div className="container max-w-4xl mx-auto p-4 md:p-8 space-y-8 pb-24">
-        {/* Header Block */}
-        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight">Grocery Planner</h1>
-            <p className="text-muted-foreground mt-1">Your AI-generated shopping list for the week.</p>
-          </div>
-          <div className="flex gap-2.5">
-            {list && list.items.length > 0 && (
-              <Button 
-                onClick={handleAddAllToCart} 
-                className="gap-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-md hover:scale-[1.01] transition-all"
-              >
-                <ShoppingCart className="h-4 w-4" />
-                Order checklist via Instamart (₹{totalCost})
-              </Button>
-            )}
-            <Button 
-              onClick={handleGenerate} 
-              disabled={isGenerating}
-              variant="outline"
-              className="gap-2 rounded-full border-border/80 text-foreground font-semibold"
-            >
-              <Sparkles className="h-4 w-4 text-emerald-600" />
-              {isGenerating ? "Generating..." : list && list.items.length > 0 ? "Regenerate List" : "Generate List"}
-            </Button>
-          </div>
-        </header>
-
-        {isLoading ? (
-          <div className="space-y-6">
-            <Skeleton className="h-24 w-full rounded-2xl animate-pulse" />
-            <Skeleton className="h-64 w-full rounded-2xl animate-pulse" />
-          </div>
-        ) : list ? (
-          <>
-            <Card className="bg-gradient-to-tr from-emerald-500/5 via-primary/5 to-background border-primary/20 shadow-xs rounded-2xl">
-              <CardContent className="p-6 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="h-12 w-12 rounded-full bg-primary/15 flex items-center justify-center text-primary">
-                    <Calendar className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-lg">Week of {new Date(list.weekOf).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {list.checkedItems} of {list.totalItems} items collected
-                    </p>
-                  </div>
-                </div>
-                <div className="hidden md:flex items-center gap-2 text-emerald-600 font-bold">
-                  {list.checkedItems === list.totalItems && list.totalItems > 0 && (
-                    <><CheckCircle2 className="h-5 w-5" /> All Collected!</>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Checklist */}
-            <div className="space-y-6">
-              {Object.entries(groupedItems).map(([category, items]) => (
-                <div key={category} className="space-y-3">
-                  <h3 className="font-extrabold text-sm uppercase tracking-wider text-emerald-700 dark:text-emerald-400 border-b pb-1.5">{category}</h3>
-                  <div className="grid gap-2.5">
-                    {(items as any[]).map((item: any) => (
-                      <div 
-                        key={item.id} 
-                        className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${item.isChecked ? 'bg-muted/50 border-transparent opacity-80' : 'bg-background hover:border-primary/40 shadow-2xs'}`}
-                      >
-                        <div className="flex items-center gap-3.5">
-                          <Checkbox 
-                            checked={item.isChecked} 
-                            onCheckedChange={() => handleToggle(item.id)}
-                            id={`item-${item.id}`}
-                            className="h-5.5 w-5.5 rounded-full data-[state=checked]:bg-primary border-border/80"
-                          />
-                          <div className="flex flex-col text-left">
-                            <label 
-                              htmlFor={`item-${item.id}`}
-                              className={`text-sm font-bold cursor-pointer leading-tight text-foreground ${item.isChecked ? 'line-through text-muted-foreground font-medium' : ''}`}
-                            >
-                              {item.name}
-                            </label>
-                            {item.nutritionNote && (
-                              <span className="text-[10px] text-muted-foreground mt-0.5 max-w-lg">
-                                {item.nutritionNote}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] text-muted-foreground bg-muted/80 px-2 py-0.5 rounded font-bold uppercase shrink-0">
-                            {item.quantity} {item.unit}
-                          </span>
-                          <span className="text-xs font-extrabold text-emerald-600 shrink-0">₹{item.price}</span>
-                          <Button
-                            onClick={() => handleAddItemToCart(item)}
-                            size="icon"
-                            variant="ghost"
-                            className="h-8 w-8 rounded-full text-emerald-600 hover:text-emerald-75 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
-                            title="Add to Instamart cart"
-                          >
-                            <ShoppingCart className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+      <PageContainer className="space-y-6 sm:space-y-8">
+        {/* ─── 1. Header ─── */}
+        <header className="space-y-3 pt-1">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+                Instamart Groceries
+              </h1>
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                Superfast grocery delivery & everyday essentials delivered in 15–20 minutes.
+              </p>
             </div>
 
-            {/* Instamart Shelf Selection */}
-            <div className="space-y-5 pt-8">
-              <div className="border-t border-border/50 pt-8">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                      <Sparkles className="text-emerald-600 h-5.5 w-5.5" />
-                      Instamart Healthy Essentials
-                    </h2>
-                    <p className="text-xs text-muted-foreground mt-1">Superfoods, organic produce, and health items delivered in 15 mins.</p>
-                  </div>
-                  <span className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-200/50 flex items-center gap-1 shrink-0">
-                    ⚡ Powered by Swiggy
-                  </span>
-                </div>
+            {/* Swiggy Attribution */}
+            <div className="shrink-0 self-start sm:self-auto">
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1.5 shadow-2xs">
+                ⚡ Powered by Swiggy Instamart
+              </span>
+            </div>
+          </div>
+
+          {/* ─── 2. Domain Navigation ─── */}
+          <div className="pt-1">
+            <ExploreDomainTabs activeDomain="instamart" />
+          </div>
+
+          {/* ─── 3. View Switcher (Catalog vs Checklist) ─── */}
+          <div className="flex items-center gap-2 pt-1 border-b border-border/60 pb-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("catalog")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                activeTab === "catalog"
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ShoppingBag className="h-3.5 w-3.5" />
+              <span>Instamart Catalog</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("checklist")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                activeTab === "checklist"
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : "bg-muted/60 text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <ListChecks className="h-3.5 w-3.5" />
+              <span>Weekly Checklist ({dbChecklist.length})</span>
+            </button>
+          </div>
+
+          {/* ─── 4. Search Bar (Catalog mode) ─── */}
+          {activeTab === "catalog" && (
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search groceries, dairy, produce, snacks..."
+                  className="pl-11 pr-10 py-5 rounded-2xl bg-card border-border/80 focus-visible:ring-emerald-500 text-xs sm:text-sm shadow-2xs"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+                    aria-label="Clear search query"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 pt-2">
-                {MOCK_INSTAMART_GROCERIES.map((item) => (
-                  <Card key={item.id} className="overflow-hidden border-border/50 rounded-2xl flex flex-col justify-between group hover:shadow-md transition-all duration-200">
-                    <div className="aspect-square bg-muted relative overflow-hidden">
-                      <img 
-                        src={item.imageUrl} 
-                        alt={item.name} 
-                        className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300"
-                      />
-                      {item.discountText && (
-                        <div className="absolute top-2 left-2 bg-rose-500 text-white text-[9px] font-black px-2 py-0.5 rounded shadow-sm">
-                          {item.discountText}
-                        </div>
-                      )}
-                      <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1">
-                        <Clock className="h-2.5 w-2.5" />
-                        {item.deliveryTime}
-                      </div>
-                    </div>
-
-                    <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
-                      <div className="space-y-1">
-                        <span className="text-[8px] font-extrabold text-muted-foreground uppercase tracking-wider">{item.category}</span>
-                        <h4 className="text-xs font-extrabold text-foreground leading-tight line-clamp-1">{item.name}</h4>
-                        <p className="text-[9px] text-muted-foreground line-clamp-2 leading-relaxed">
-                          {item.nutritionNote}
-                        </p>
-                      </div>
-
-                      <div className="space-y-2 pt-1 border-t border-muted/50">
-                        <div className="flex items-baseline gap-1.5 justify-between">
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-xs font-black text-emerald-600">
-                              ₹{item.discountPrice || item.price}
-                            </span>
-                            {item.discountPrice && (
-                              <span className="text-[10px] text-muted-foreground line-through">
-                                ₹{item.price}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[9px] text-muted-foreground font-semibold">
-                            {item.quantity} {item.unit}
-                          </span>
-                        </div>
-
-                        {item.inStock ? (
-                          <Button
-                            onClick={() => handleAddItemToCart(item)}
-                            className="w-full rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-8 text-[10px] gap-1"
-                          >
-                            <ShoppingCart className="h-3.5 w-3.5" />
-                            Add
-                          </Button>
-                        ) : (
-                          <Button
-                            disabled
-                            variant="secondary"
-                            className="w-full rounded-lg h-8 text-[10px] gap-1 bg-muted text-muted-foreground"
-                          >
-                            <ShieldAlert className="h-3 w-3" />
-                            Out of Stock
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </Card>
+              {/* Category Filter Shortcuts */}
+              <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+                {INSTAMART_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.value}
+                    type="button"
+                    onClick={() => setActiveCategory(cat.value)}
+                    className={cn(
+                      "whitespace-nowrap px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-150 border cursor-pointer shrink-0 shadow-2xs",
+                      activeCategory === cat.value
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                        : "bg-card text-foreground/80 hover:bg-muted border-border/80"
+                    )}
+                  >
+                    {cat.label}
+                  </button>
                 ))}
               </div>
             </div>
-          </>
-        ) : null}
-      </div>
+          )}
+        </header>
+
+        {/* ─── 5. Main Catalog Content ─── */}
+        {activeTab === "catalog" ? (
+          filteredProducts.length === 0 ? (
+            /* Empty State */
+            <AppCard className="p-8 sm:p-12 text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center mx-auto text-emerald-600">
+                <ShoppingBag className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-foreground">
+                  No products found for this category
+                </h3>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  No grocery items matching "{search || activeCategory}". Try searching for another item or resetting filters.
+                </p>
+              </div>
+              <SecondaryButton
+                size="sm"
+                onClick={() => {
+                  setSearch("");
+                  setActiveCategory("all");
+                }}
+                className="text-xs gap-1.5"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Reset Filters</span>
+              </SecondaryButton>
+            </AppCard>
+          ) : (
+            /* Product Grid */
+            <div className="space-y-4">
+              <SectionHeader
+                title="Popular Everyday Essentials"
+                subtitle="Fresh groceries delivered in 15–20 minutes by Swiggy Instamart"
+              />
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                {filteredProducts.map((product) => {
+                  const isAdded = cartItems.some(
+                    (i) => i.id === `grocery-${product.id}`
+                  );
+                  return (
+                    <InstamartProductCard
+                      key={product.id}
+                      product={product}
+                      onAddToCart={() => handleAddToCart(product)}
+                      onClick={() => handleOpenProduct(product)}
+                      isAddedToCart={isAdded}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )
+        ) : (
+          /* ─── 6. Weekly Checklist View ─── */
+          <div className="space-y-6">
+            <AppCard className="p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
+                    <ListChecks className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-bold text-foreground">
+                      Weekly Grocery Checklist
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Track collected grocery items or transfer them to Instamart.
+                    </p>
+                  </div>
+                </div>
+
+                <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full">
+                  {dbChecklist.filter((i) => i.isChecked).length} / {dbChecklist.length} checked
+                </span>
+              </div>
+
+              {loadingChecklist ? (
+                <div className="space-y-2 py-4">
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-10 rounded-xl" />
+                  ))}
+                </div>
+              ) : dbChecklist.length === 0 ? (
+                <div className="py-8 text-center text-xs text-muted-foreground space-y-2">
+                  <p className="font-semibold text-foreground">No items on your checklist</p>
+                  <p>Items added via AI Copilot or grocery planning will appear here.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border/50 text-xs">
+                  {dbChecklist.map((item) => (
+                    <div
+                      key={item.id}
+                      className="py-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Checkbox
+                          id={`chk-${item.id}`}
+                          checked={item.isChecked}
+                          onCheckedChange={() => handleToggleChecklist(item)}
+                          className="data-[state=checked]:bg-emerald-600 border-border/80"
+                        />
+                        <label
+                          htmlFor={`chk-${item.id}`}
+                          className={cn(
+                            "font-semibold text-foreground cursor-pointer",
+                            item.isChecked && "line-through text-muted-foreground"
+                          )}
+                        >
+                          {item.name}
+                        </label>
+                      </div>
+
+                      <span className="text-[11px] font-bold text-muted-foreground bg-muted px-2 py-0.5 rounded-md">
+                        {item.quantity || "1"} {item.unit || "unit"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AppCard>
+          </div>
+        )}
+
+        {/* ─── 7. Product Detail Sheet ─── */}
+        <InstamartProductDetailSheet
+          product={selectedProduct}
+          isOpen={isDetailOpen}
+          onClose={() => setIsDetailOpen(false)}
+          isAddedToCart={
+            selectedProduct
+              ? cartItems.some((i) => i.id === `grocery-${selectedProduct.id}`)
+              : false
+          }
+        />
+      </PageContainer>
     </Layout>
   );
 }

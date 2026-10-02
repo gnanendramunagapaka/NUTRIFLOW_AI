@@ -80,10 +80,15 @@ export function useSwiggyAddresses() {
 
 interface CartContextType {
   items: CartItem[];
+  mealItems: CartItem[];
+  groceryItems: CartItem[];
+  mealSubtotal: number;
+  grocerySubtotal: number;
   addToCart: (item: Omit<CartItem, 'quantity'>, qty?: number) => Promise<void>;
   removeFromCart: (id: string | number) => Promise<void>;
   updateQuantity: (id: string | number, quantity: number) => Promise<void>;
   clearCart: () => Promise<void>;
+  clearDomainCart: (type: 'meal' | 'grocery') => Promise<void>;
   itemCount: number;
   subtotal: number;
   totalCalories: number;
@@ -338,7 +343,32 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const clearDomainCart = async (type: 'meal' | 'grocery') => {
+    const updated = items.filter(item => item.type !== type);
+    setItems(updated);
+    localStorage.setItem(getCartKey(), JSON.stringify(updated));
+
+    if (user) {
+      const removedItems = items.filter(item => item.type === type);
+      for (const item of removedItems) {
+        try {
+          await fetch(`/api/cart/${encodeURIComponent(String(item.id))}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+  };
+
   // Derive counts and sums
+  const mealItems = items.filter(item => item.type === 'meal');
+  const groceryItems = items.filter(item => item.type === 'grocery');
+  const mealSubtotal = mealItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const grocerySubtotal = groceryItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
@@ -347,27 +377,28 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const totalCarbs = items.reduce((sum, item) => sum + ((item.carbs || 0) * item.quantity), 0);
   const totalFat = items.reduce((sum, item) => sum + ((item.fat || 0) * item.quantity), 0);
 
-  // Swiggy-like pricing metrics
-  const deliveryFee = subtotal > 499 ? 0 : 35; // Free delivery for high orders
-  const platformFee = 5;
-  const discount = subtotal > 300 ? Math.round(subtotal * 0.1) : 0; // 10% wellness discount
-  const totalAmount = Math.max(0, subtotal + deliveryFee + platformFee - discount);
+  // Real cart item totals only; fees and live delivery estimates are calculated at checkout
+  const deliveryFee = 0;
+  const platformFee = 0;
+  const discount = 0;
+  const totalAmount = subtotal;
 
-  // Delivery time estimate based on items
-  const deliveryEstimate = items.length === 0 
-    ? "25-35 min" 
-    : items.some(item => item.type === 'meal') 
-      ? "30-40 min" 
-      : "45-60 min";
+  // Delivery time estimate neutral placeholder
+  const deliveryEstimate = "Delivery estimate shown at checkout";
 
   return (
     <CartContext.Provider
       value={{
         items,
+        mealItems,
+        groceryItems,
+        mealSubtotal,
+        grocerySubtotal,
         addToCart,
         removeFromCart,
         updateQuantity,
         clearCart,
+        clearDomainCart,
         itemCount,
         subtotal,
         totalCalories,

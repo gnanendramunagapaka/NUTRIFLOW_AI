@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { Loader2 } from "lucide-react";
+import { AuthLayout } from "@/components/layout/AuthLayout";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AuthCallback() {
@@ -9,16 +12,14 @@ export default function AuthCallback() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     let active = true;
 
     async function handleCallback() {
       try {
-        console.log("[AUTH CALLBACK] Processing Swiggy OAuth callback parameters...");
-
         const urlParams = new URLSearchParams(window.location.search);
-
         const swiggyCode = urlParams.get("code");
         const swiggyState = urlParams.get("state");
         const swiggyError = urlParams.get("error");
@@ -30,22 +31,18 @@ export default function AuthCallback() {
         if (!isSwiggyCallback) {
           console.warn("[AUTH CALLBACK] Unrecognized or invalid OAuth state parameter");
           setError("Invalid authentication state. Please try connecting Swiggy again.");
-          setTimeout(() => {
-            if (active) setLocation("/login");
-          }, 2000);
           return;
         }
 
         if (swiggyError) {
           console.warn("[AUTH CALLBACK] Swiggy returned OAuth error:", swiggyError);
-          toast({
-            title: "Swiggy Authorization Failed",
-            description: `Swiggy returned: ${swiggyError}`,
-            variant: "destructive",
-          });
           sessionStorage.removeItem("swiggy_pkce_state");
           sessionStorage.removeItem("swiggy_pkce_verifier");
-          setLocation("/login");
+          setError(
+            swiggyError === "access_denied"
+              ? "Swiggy authorization was cancelled."
+              : `Swiggy authorization error: ${swiggyError}`
+          );
           return;
         }
 
@@ -67,7 +64,7 @@ export default function AuthCallback() {
           headers: {
             "Content-Type": "application/json",
           },
-          credentials: "include", // Receive and persist HttpOnly session cookie
+          credentials: "include",
           body: JSON.stringify({
             code: swiggyCode,
             code_verifier: codeVerifier,
@@ -87,6 +84,8 @@ export default function AuthCallback() {
 
         if (!active) return;
 
+        setSuccess(true);
+
         // Rehydrate NutriFlow user session state from the new session cookie
         await refreshUser();
 
@@ -98,26 +97,20 @@ export default function AuthCallback() {
         const returnTo = sessionStorage.getItem("swiggy_auth_return_to");
         sessionStorage.removeItem("swiggy_auth_return_to");
 
-        // Route new users to onboarding; returning completed users to returnTo or dashboard
-        if (result.user?.onboardingCompleted === false) {
-          setLocation("/onboarding");
-        } else {
-          setLocation(returnTo || "/dashboard");
-        }
+        // Small delay to provide smooth visual feedback
+        setTimeout(() => {
+          if (!active) return;
+          if (result.user?.onboardingCompleted === false) {
+            setLocation("/onboarding");
+          } else {
+            setLocation(returnTo || "/dashboard");
+          }
+        }, 800);
       } catch (err: any) {
         console.error("[AUTH CALLBACK] Callback failure:", err);
         if (!active) return;
 
-        setError(err.message || "Failed to complete Swiggy authorization");
-        toast({
-          title: "Swiggy Connection Issue",
-          description: err.message || "Could not complete authorization. Please try again.",
-          variant: "destructive",
-        });
-
-        setTimeout(() => {
-          if (active) setLocation("/login");
-        }, 2500);
+        setError(err.message || "Failed to complete Swiggy authorization. Please try again.");
       }
     }
 
@@ -129,29 +122,56 @@ export default function AuthCallback() {
   }, [refreshUser, setLocation, toast]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-primary/10 to-background px-4">
-      <div className="max-w-md w-full text-center space-y-6 bg-card/85 backdrop-blur-md border border-border/80 p-8 rounded-2xl shadow-xl animate-fade-in">
-        {error ? (
-          <div className="space-y-4">
-            <div className="mx-auto bg-destructive/10 w-16 h-16 rounded-full flex items-center justify-center text-destructive mb-3 shadow-inner">
-              <span className="text-2xl font-bold">!</span>
-            </div>
-            <h2 className="text-2xl font-bold text-foreground">Authorization Error</h2>
-            <p className="text-sm text-muted-foreground">{error}</p>
-            <p className="text-xs text-muted-foreground/80">Redirecting you back to login...</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="mx-auto bg-primary/10 w-16 h-16 rounded-full flex items-center justify-center text-primary mb-3 shadow-inner">
-              <Loader2 className="h-8 w-8 animate-spin" />
-            </div>
-            <h2 className="text-2xl font-bold text-foreground">Connecting with Swiggy</h2>
-            <p className="text-sm text-muted-foreground">
-              Verifying your Swiggy authorization and securing your NutriFlow session...
-            </p>
-          </div>
-        )}
+    <AuthLayout>
+      <div className="w-full max-w-md mx-auto">
+        <Card className="border border-border/80 shadow-md bg-card rounded-3xl overflow-hidden p-6 sm:p-8 text-center">
+          <CardContent className="p-0 space-y-5">
+            {error ? (
+              <div className="space-y-4 py-2">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive">
+                  <AlertCircle className="h-7 w-7" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="text-xl font-bold text-foreground">Connection Issue</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                    {error}
+                  </p>
+                </div>
+                <Button
+                  onClick={() => setLocation("/login")}
+                  className="rounded-xl px-5 h-11 text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/95"
+                >
+                  Return to Connection Screen
+                </Button>
+              </div>
+            ) : success ? (
+              <div className="space-y-4 py-2">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-7 w-7 animate-in zoom-in" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="text-xl font-bold text-foreground">Swiggy Connected!</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                    Loading your personalized wellness experience...
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4 py-2">
+                <div className="mx-auto w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                  <Loader2 className="h-7 w-7 animate-spin" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="text-xl font-bold text-foreground">Verifying Connection</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground leading-relaxed">
+                    Connecting to Swiggy and securing your session...
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-    </div>
+    </AuthLayout>
   );
 }
