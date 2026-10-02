@@ -199,7 +199,7 @@ export function GroceryRecommendationCard({
         <p className="text-[11px] text-muted-foreground">
           Curated Instamart pantry picks and meal-prep ingredient plans will appear here.
         </p>
-        <Link href="/grocery">
+        <Link href="/discover?domain=instamart">
           <SecondaryButton size="sm" className="text-xs mt-1">
             Open Grocery Hub
           </SecondaryButton>
@@ -243,7 +243,7 @@ export function GroceryRecommendationCard({
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-2 border-t border-border/50">
-        <Link href="/grocery" className="flex-1">
+        <Link href="/discover?domain=instamart" className="flex-1">
           <SecondaryButton size="sm" className="w-full text-xs h-9">
             View in Groceries
           </SecondaryButton>

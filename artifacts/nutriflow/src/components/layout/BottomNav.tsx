@@ -21,10 +21,10 @@ export function BottomNav({ className }: BottomNavProps) {
     return null;
   }
 
-  // Primary 4 items per NutriFlow product direction:
+  // Primary 4 items per canonical NutriFlow navigation architecture:
   // 1. Home (/dashboard)
-  // 2. AI Copilot (/chat)
-  // 3. Explore (/discover)
+  // 2. Explore (/discover)
+  // 3. AI Copilot (/chat)
   // 4. Profile (/profile)
   const navItems = [
     {
@@ -34,19 +34,19 @@ export function BottomNav({ className }: BottomNavProps) {
       isActive: location === "/dashboard" || location === "/",
     },
     {
-      href: "/chat",
-      label: "AI Copilot",
-      icon: Sparkles,
-      isActive: location === "/chat",
-    },
-    {
       href: "/discover",
       label: "Explore",
       icon: Compass,
       isActive:
-        location === "/discover" ||
+        location.startsWith("/discover") ||
         location === "/grocery" ||
         location === "/dineout",
+    },
+    {
+      href: "/chat",
+      label: "AI Copilot",
+      icon: Sparkles,
+      isActive: location === "/chat",
     },
     {
       href: "/profile",

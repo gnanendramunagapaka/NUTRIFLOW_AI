@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import {
   PageContainer,
@@ -22,6 +23,8 @@ import { RestaurantCard, RestaurantItemData } from "@/components/food/Restaurant
 import { FoodItemCard, FoodItemData } from "@/components/food/FoodItemCard";
 import { RestaurantDetailSheet } from "@/components/food/RestaurantDetailSheet";
 import { FoodItemDetailSheet } from "@/components/food/FoodItemDetailSheet";
+import { InstamartDomainView } from "@/components/instamart/InstamartDomainView";
+import { DineoutDomainView } from "@/components/dineout/DineoutDomainView";
 
 // Discovery Category Filter Shortcuts
 const CUISINE_CATEGORIES = [
@@ -35,7 +38,39 @@ const CUISINE_CATEGORIES = [
   { label: "Desserts", value: "Desserts" },
 ];
 
+const getDomainFromLocation = (): "food" | "instamart" | "dineout" => {
+  if (typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    const d = params.get("domain");
+    if (d === "instamart" || d === "dineout" || d === "food") {
+      return d;
+    }
+  }
+  return "food";
+};
+
 export default function Discover() {
+  const [location, setLocation] = useLocation();
+  const [activeDomain, setActiveDomain] = useState<"food" | "instamart" | "dineout">(getDomainFromLocation);
+
+  useEffect(() => {
+    setActiveDomain(getDomainFromLocation());
+  }, [location]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setActiveDomain(getDomainFromLocation());
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const handleDomainChange = (domain: "food" | "instamart" | "dineout") => {
+    setActiveDomain(domain);
+    const target = domain === "food" ? "/discover" : `/discover?domain=${domain}`;
+    setLocation(target);
+  };
+
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedRestaurant, setSelectedRestaurant] = useState<RestaurantItemData | null>(null);
@@ -279,27 +314,53 @@ export default function Discover() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-                Explore Food & Dining
+                {activeDomain === "instamart"
+                  ? "Instamart Groceries"
+                  : activeDomain === "dineout"
+                  ? "Dineout Restaurant Discovery"
+                  : "Explore Food & Dining"}
               </h1>
               <p className="text-xs sm:text-sm text-muted-foreground">
-                Discover popular restaurants and wholesome meals available in your area.
+                {activeDomain === "instamart"
+                  ? "Groceries & everyday essentials from Swiggy Instamart."
+                  : activeDomain === "dineout"
+                  ? "Explore popular dining destinations, partner tables, and dining offers."
+                  : "Discover popular restaurants and wholesome meals available in your area."}
               </p>
             </div>
 
             {/* Swiggy Attribution */}
             <div className="shrink-0 self-start sm:self-auto">
-              <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-3 py-1 rounded-full border border-orange-200/50 flex items-center gap-1.5 shadow-2xs">
-                ⚡ Powered by Swiggy
-              </span>
+              {activeDomain === "instamart" ? (
+                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-1.5 shadow-2xs">
+                  ⚡ Powered by Swiggy Instamart
+                </span>
+              ) : activeDomain === "dineout" ? (
+                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 flex items-center gap-1.5 shadow-2xs">
+                  ⚡ Powered by Swiggy Dineout
+                </span>
+              ) : (
+                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-3 py-1 rounded-full border border-orange-200/50 flex items-center gap-1.5 shadow-2xs">
+                  ⚡ Powered by Swiggy
+                </span>
+              )}
             </div>
           </div>
 
           {/* ─── 2. Domain Navigation Tabs ─── */}
           <div className="pt-1">
-            <ExploreDomainTabs activeDomain="food" />
+            <ExploreDomainTabs activeDomain={activeDomain} onDomainChange={handleDomainChange} />
           </div>
+        </header>
 
-          {/* ─── 3. Search Bar ─── */}
+        {/* ─── Domain View Switching ─── */}
+        {activeDomain === "instamart" ? (
+          <InstamartDomainView />
+        ) : activeDomain === "dineout" ? (
+          <DineoutDomainView />
+        ) : (
+          <>
+            {/* ─── 3. Search Bar ─── */}
           <div className="relative pt-1">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-muted-foreground" />
             <Input
@@ -338,7 +399,6 @@ export default function Discover() {
               </button>
             ))}
           </div>
-        </header>
 
         {/* ─── 5. Loading State ─── */}
         {isLoading ? (
@@ -454,7 +514,9 @@ export default function Discover() {
           onClose={() => setSelectedMealForDetail(null)}
           onAddToCart={(item, qty) => handleAddToCart(item, qty)}
         />
-      </PageContainer>
-    </Layout>
+      </>
+    )}
+  </PageContainer>
+</Layout>
   );
 }

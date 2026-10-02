@@ -134,7 +134,7 @@ export function CartDrawer() {
             <Button
               onClick={() => {
                 setIsCartOpen(false);
-                setLocation(isMealTab ? "/discover" : "/grocery");
+                setLocation(isMealTab ? "/discover" : "/discover?domain=instamart");
               }}
               className={cn(
                 "rounded-full text-white font-medium text-xs px-5",

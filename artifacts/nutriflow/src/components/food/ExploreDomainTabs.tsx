@@ -6,44 +6,64 @@ import { cn } from "@/lib/utils";
 interface ExploreDomainTabsProps {
   className?: string;
   activeDomain?: "food" | "instamart" | "dineout";
+  onDomainChange?: (domain: "food" | "instamart" | "dineout") => void;
 }
 
 export function ExploreDomainTabs({
   className,
   activeDomain = "food",
+  onDomainChange,
 }: ExploreDomainTabsProps) {
   const [, setLocation] = useLocation();
 
   const domains = [
     {
-      id: "food",
+      id: "food" as const,
       label: "Food Delivery",
       desc: "Dishes & restaurants",
       icon: Utensils,
       color: "text-[#FC8019]",
       bgActive: "bg-orange-500/10 border-[#FC8019]/40 text-[#FC8019]",
       active: activeDomain === "food",
-      onClick: () => setLocation("/discover"),
+      onClick: () => {
+        if (onDomainChange) {
+          onDomainChange("food");
+        } else {
+          setLocation("/discover");
+        }
+      },
     },
     {
-      id: "instamart",
+      id: "instamart" as const,
       label: "Instamart",
       desc: "Groceries & pantry",
       icon: ShoppingBag,
       color: "text-emerald-600 dark:text-emerald-400",
       bgActive: "bg-emerald-500/10 border-emerald-500/40 text-emerald-600",
       active: activeDomain === "instamart",
-      onClick: () => setLocation("/grocery"),
+      onClick: () => {
+        if (onDomainChange) {
+          onDomainChange("instamart");
+        } else {
+          setLocation("/discover?domain=instamart");
+        }
+      },
     },
     {
-      id: "dineout",
+      id: "dineout" as const,
       label: "Dineout",
       desc: "Eat out & reserve",
       icon: Compass,
       color: "text-amber-500",
       bgActive: "bg-amber-500/10 border-amber-500/40 text-amber-600",
       active: activeDomain === "dineout",
-      onClick: () => setLocation("/dineout"),
+      onClick: () => {
+        if (onDomainChange) {
+          onDomainChange("dineout");
+        } else {
+          setLocation("/discover?domain=dineout");
+        }
+      },
     },
   ];
 

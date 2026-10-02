@@ -33,12 +33,11 @@ export function TopBar({ title, className }: TopBarProps) {
   const { user, logout } = useAuth();
   const { itemCount, setIsCartOpen } = useCart();
 
-  // Desktop navigation items (clean, comprehensive)
+  // Desktop navigation items (canonical 4 destinations)
   const navItems = [
     { href: "/dashboard", label: "Home", icon: Home },
     { href: "/discover", label: "Explore", icon: Compass },
     { href: "/chat", label: "AI Copilot", icon: MessageSquare },
-    { href: "/grocery", label: "Grocery", icon: ClipboardList },
     { href: "/profile", label: "Profile", icon: User },
   ];
 
@@ -94,7 +93,7 @@ export function TopBar({ title, className }: TopBarProps) {
               const isActive =
                 location === item.href ||
                 (item.href === "/dashboard" && location === "/") ||
-                (item.href === "/discover" && location === "/dineout");
+                (item.href === "/discover" && (location.startsWith("/discover") || location === "/dineout" || location === "/grocery"));
               return (
                 <Link key={item.href} href={item.href}>
                   <span
@@ -185,10 +184,10 @@ export function TopBar({ title, className }: TopBarProps) {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   className="p-2.5 cursor-pointer rounded-lg text-xs font-medium hover:bg-muted/80 focus:bg-muted"
-                  onClick={() => setLocation("/grocery")}
+                  onClick={() => setLocation("/discover")}
                 >
-                  <ClipboardList className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span>Grocery / Instamart</span>
+                  <Compass className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <span>Explore Domains</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

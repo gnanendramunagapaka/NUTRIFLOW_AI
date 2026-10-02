@@ -32,7 +32,6 @@ export function Navbar() {
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/discover", label: "Discover", icon: Search },
     { href: "/chat", label: "AI Copilot", icon: MessageSquare },
-    { href: "/grocery", label: "Grocery", icon: ClipboardList },
     { href: "/profile", label: "Profile", icon: User },
   ];
 

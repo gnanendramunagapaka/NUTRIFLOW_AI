@@ -238,7 +238,7 @@ export default function Dashboard() {
 
             <button
               type="button"
-              onClick={() => setLocation("/grocery")}
+              onClick={() => setLocation("/discover?domain=instamart")}
               className="flex items-center gap-3 p-3.5 rounded-2xl bg-card border border-border/80 hover:border-primary/40 hover:bg-muted/40 transition-all text-left shadow-2xs group cursor-pointer"
             >
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 transition-transform group-hover:scale-105">
@@ -674,7 +674,7 @@ export default function Dashboard() {
                 </p>
               )}
 
-              <Link href="/grocery">
+              <Link href="/discover?domain=instamart">
                 <SecondaryButton size="sm" className="w-full text-xs">
                   Plan Groceries
                 </SecondaryButton>

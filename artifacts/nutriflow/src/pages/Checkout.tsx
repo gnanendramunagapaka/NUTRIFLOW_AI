@@ -132,7 +132,7 @@ export default function Checkout() {
               Explore Food Delivery
             </Button>
             <Button
-              onClick={() => setLocation("/grocery")}
+              onClick={() => setLocation("/discover?domain=instamart")}
               className="rounded-full bg-emerald-600 hover:bg-emerald-700 text-white px-5 text-xs font-semibold"
             >
               Explore Instamart
@@ -151,7 +151,7 @@ export default function Checkout() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setLocation(isFood ? "/discover" : "/grocery")}
+            onClick={() => setLocation(isFood ? "/discover" : "/discover?domain=instamart")}
             className="rounded-full hover:bg-muted"
             aria-label="Back to explore"
           >
@@ -230,7 +230,7 @@ export default function Checkout() {
               Switch to the other basket above or browse more items.
             </p>
             <Button
-              onClick={() => setLocation(isFood ? "/discover" : "/grocery")}
+              onClick={() => setLocation(isFood ? "/discover" : "/discover?domain=instamart")}
               className={cn(
                 "rounded-full text-white text-xs font-semibold px-5",
                 isFood ? "bg-[#FC8019] hover:bg-[#E26E10]" : "bg-emerald-600 hover:bg-emerald-700"
