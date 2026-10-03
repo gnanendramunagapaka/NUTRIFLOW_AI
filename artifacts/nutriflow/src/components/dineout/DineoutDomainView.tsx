@@ -6,9 +6,9 @@ import {
 } from "@/components/layout/primitives";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, X, Compass, UtensilsCrossed, RefreshCw } from "lucide-react";
+import { Search, X, UtensilsCrossed, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useListRestaurants } from "@workspace/api-client-react";
+import { useRecommendations, type DineoutRecommendationResponse } from "@/hooks/use-recommendations";
 import {
   DineoutRestaurantCard,
   DineoutRestaurantData,
@@ -31,42 +31,42 @@ export function DineoutDomainView() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<DineoutRestaurantData | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  // Fetch verified restaurants from database
-  const { data: databaseRestaurants, isLoading } = useListRestaurants();
+  // Effective query combining search input and category shortcut
+  const effectiveQuery = search.trim() || (activeCategory !== "all" ? activeCategory : undefined);
 
-  // Transform and filter Dineout restaurants
+  // Live Swiggy Dineout recommendations
+  const {
+    data: dineoutData,
+    isLoading,
+    error: dineoutError,
+    refetch,
+  } = useRecommendations<DineoutRecommendationResponse>("dineout", {
+    query: effectiveQuery,
+  });
+
+  // Map Live Dineout Recommendations to DineoutRestaurantData preserving only real backend fields
   const filteredRestaurants: DineoutRestaurantData[] = useMemo(() => {
-    if (!databaseRestaurants) return [];
+    if (!dineoutData?.recommendations) return [];
 
-    return databaseRestaurants
-      .map((r: any, idx: number) => ({
-        id: r.id,
-        name: r.name,
-        cuisine: r.cuisine || "Multi-cuisine",
-        rating: r.rating || 4.3,
-        costForTwo: r.costForTwo || 800 + (idx % 4) * 300,
-        locality: r.locality || (idx % 2 === 0 ? "Indiranagar, Bengaluru" : "Koramangala, Bengaluru"),
-        distance: `${(1.2 + (idx * 0.7) % 3.5).toFixed(1)} km`,
-        timings: "11:30 AM – 11:00 PM",
-        offerText: idx % 2 === 0 ? "Flat 20% off with Dineout Pay" : undefined,
-        imageUrl: r.imageUrl,
-        isOpen: true,
-      }))
-      .filter((r) => {
-        const matchesCategory =
-          activeCategory === "all" ||
-          r.cuisine.toLowerCase().includes(activeCategory.toLowerCase()) ||
-          r.name.toLowerCase().includes(activeCategory.toLowerCase());
+    return dineoutData.recommendations.map((rec) => {
+      const c = rec.candidate;
+      const meta = c.sourceMetadata;
 
-        const matchesSearch =
-          !search ||
-          r.name.toLowerCase().includes(search.toLowerCase()) ||
-          r.cuisine.toLowerCase().includes(search.toLowerCase()) ||
-          (r.locality && r.locality.toLowerCase().includes(search.toLowerCase()));
-
-        return matchesCategory && matchesSearch;
-      });
-  }, [databaseRestaurants, activeCategory, search]);
+      return {
+        id: meta?.restaurantId || c.id,
+        name: c.name || "Dining Destination",
+        cuisine: c.categoryTags?.join(", ") || c.contextTags?.[0] || "Dining",
+        rating: meta?.rating,
+        costForTwo: meta?.costForTwo,
+        locality: meta?.locality,
+        distance: meta?.distance,
+        timings: undefined, // Do not fabricate timings
+        offerText: meta?.offers?.[0], // Real offer if present in metadata
+        imageUrl: undefined, // Do not fabricate images
+        isOpen: c.availability !== "unavailable",
+      };
+    });
+  }, [dineoutData]);
 
   const handleOpenRestaurant = (restaurant: DineoutRestaurantData) => {
     setSelectedRestaurant(restaurant);
@@ -120,8 +120,26 @@ export function DineoutDomainView() {
         </div>
       </div>
 
-      {/* ─── Restaurant Results Grid ─── */}
-      {isLoading ? (
+      {/* ─── Restaurant Results Grid / Loading / Error / Empty States ─── */}
+      {dineoutError ? (
+        <AppCard className="p-8 sm:p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+            <UtensilsCrossed className="h-6 w-6" />
+          </div>
+          <h3 className="text-sm font-bold text-foreground">Unable to load Dineout restaurants</h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            {dineoutError.message || "Failed to reach Swiggy Dineout recommendation service. Please try again."}
+          </p>
+          <SecondaryButton
+            size="sm"
+            onClick={() => refetch()}
+            className="text-xs gap-1.5"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>Retry</span>
+          </SecondaryButton>
+        </AppCard>
+      ) : isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <Skeleton className="h-64 w-full rounded-3xl" />
           <Skeleton className="h-64 w-full rounded-3xl" />

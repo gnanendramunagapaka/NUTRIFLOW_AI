@@ -39,6 +39,7 @@ const {
   resolveDineoutLocation,
   extractSwiggyMcpContent,
   extractDineoutRestaurantsFromMcp,
+  parseDineoutRestaurantsFromText,
   normalizeDineoutRestaurantsBatch,
   DineoutRecommendationRequestSchema,
   DineoutRecommendationResponseSchema,
@@ -999,6 +1000,258 @@ await test("37. E. Existing Dineout behavior remains intact with addressId resol
   assert(capturedBody.params?.arguments.addressId === "loc_dine_koramangala", "Outgoing call must have addressId matching default location");
   assert(capturedBody.params?.arguments.lat === 12.9352, "Latitude must be passed");
   assert(capturedBody.params?.arguments.lng === 77.6245, "Longitude must be passed");
+});
+
+await test("38. Regression A: Structured Dineout response still works with structuredContent", () => {
+  const structuredMcpPayload = {
+    result: {
+      structuredContent: {
+        restaurants: [
+          { id: "str_1", name: "Punjab Grill", avg_rating: 4.7, costForTwo: 2200 },
+          { id: "str_2", name: "Sattvam", avg_rating: 4.6, costForTwo: 1800 },
+        ],
+      },
+    },
+  };
+
+  const content = extractSwiggyMcpContent(structuredMcpPayload);
+  const restaurants = extractDineoutRestaurantsFromMcp(content, structuredMcpPayload);
+  assert(restaurants.length === 2, `Expected 2 restaurants from structuredContent, got ${restaurants.length}`);
+  assert(restaurants[0].id === "str_1" && restaurants[0].name === "Punjab Grill", "First restaurant mismatch");
+  assert(restaurants[1].id === "str_2" && restaurants[1].name === "Sattvam", "Second restaurant mismatch");
+});
+
+const knownProductionProseResponse = `Found 39 restaurant(s) matching "restaurants", showing 10. 29 more available...
+
+1. Punjab Grill (ID: 101)
+   Rating: 4.7
+   Cuisine: North Indian, Mughlai
+   Cost for two: ₹2200
+   Locality: Koramangala
+   Distance: 1.2 km
+
+2. Sattvam - Pure Vegetarian Fine Dining (ID: 102)
+   Rating: 4.6
+   Cuisine: North Indian, South Indian
+   Cost for two: ₹1800
+   Locality: Sadashiv Nagar
+   Distance: 3.5 km
+
+3. Toscano (ID: 103)
+   Rating: 4.5
+   Cuisine: Italian, Pizza, Pasta
+   Cost for two: ₹1800
+   Locality: UB City
+   Distance: 4.1 km
+
+4. The Black Pearl (ID: 104)
+   Rating: 4.4
+   Cuisine: BBQ, North Indian
+   Cost for two: ₹1500
+   Locality: Marathahalli
+
+5. Nagarjuna (ID: 105)
+   Rating: 4.6
+   Cuisine: Andhra, Biryani
+   Cost for two: ₹800
+   Locality: Residency Road
+
+6. Truffles (ID: 106)
+   Rating: 4.5
+   Cuisine: American, Burgers
+   Cost for two: ₹900
+   Locality: St. Marks Road
+
+7. Vidyarthi Bhavan (ID: 107)
+   Rating: 4.4
+   Cuisine: South Indian
+   Cost for two: ₹300
+   Locality: Gandhi Bazaar
+
+8. Empire Restaurant (ID: 108)
+   Rating: 4.2
+   Cuisine: Mughlai, North Indian
+   Cost for two: ₹900
+   Locality: Church Street
+
+9. Barbeque Nation (ID: 109)
+   Rating: 4.5
+   Cuisine: BBQ, North Indian
+   Cost for two: ₹1600
+   Locality: Indiranagar
+
+10. Mainland China (ID: 110)
+    Rating: 4.5
+    Cuisine: Chinese, Asian
+    Cost for two: ₹1800
+    Locality: Whitefield`;
+
+await test("39. Regression B: Text-only Dineout search response with empty structuredContent is parsed correctly", () => {
+  const mcpPayloadWithEmptyStructured = {
+    jsonrpc: "2.0",
+    id: 12345,
+    result: {
+      content: [
+        {
+          type: "text",
+          text: knownProductionProseResponse,
+        },
+      ],
+      structuredContent: {},
+    },
+  };
+
+  const content = extractSwiggyMcpContent(mcpPayloadWithEmptyStructured);
+  const restaurants = extractDineoutRestaurantsFromMcp(content, mcpPayloadWithEmptyStructured);
+  assert(restaurants.length === 10, `Expected 10 restaurants from text-only fallback, got ${restaurants.length}`);
+  assert(restaurants[0].id === "101", `First ID mismatch: ${restaurants[0].id}`);
+  assert(restaurants[0].name === "Punjab Grill", `First name mismatch: ${restaurants[0].name}`);
+  assert(restaurants[0].avg_rating === 4.7, `First rating mismatch: ${restaurants[0].avg_rating}`);
+  assert(restaurants[0].costForTwo === 2200, `First cost mismatch: ${restaurants[0].costForTwo}`);
+  assert(restaurants[0].locality === "Koramangala", `First locality mismatch: ${restaurants[0].locality}`);
+  assert(Array.isArray(restaurants[0].cuisine) && restaurants[0].cuisine.includes("North Indian"), "Cuisine mismatch");
+  assert(restaurants[9].id === "110" && restaurants[9].name === "Mainland China", "Tenth restaurant mismatch");
+});
+
+await test("40. Regression C: Known 'Found 39 restaurant(s)...' response format produces restaurant candidates in recommendation service", async () => {
+  const mcpPayloadWithEmptyStructured = {
+    jsonrpc: "2.0",
+    id: 12345,
+    result: {
+      content: [
+        {
+          type: "text",
+          text: knownProductionProseResponse,
+        },
+      ],
+      structuredContent: {},
+    },
+  };
+
+  const mockClient = createMockDineoutMcpClient({
+    productionEnvelope: mcpPayloadWithEmptyStructured,
+    locations: rawLocationList,
+  });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "restaurants", locationId: "loc_dine_koramangala" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, `Expected status 200, got ${result.status}`);
+  const data = result.data as any;
+  assert(data.domain === "dineout", "Domain must be dineout");
+  assert(data.metadata.totalCandidates === 10, `Expected 10 total candidates, got ${data.metadata.totalCandidates}`);
+  assert(data.recommendations.length > 0, "Must have non-empty recommendations");
+  const parsed = DineoutRecommendationResponseSchema.safeParse(data);
+  assert(parsed.success === true, `Response schema failed: ${JSON.stringify((parsed as any).error?.errors)}`);
+});
+
+await test("41. Regression D: Restaurant IDs are extracted correctly from text blocks and markdown", () => {
+  const customMarkdownProse = `Here are dining options:
+1. **The Persian Terrace** [ID: d_pt_77] - Rating: 4.8 - Locality: Malleshwaram - Cuisine: Persian, Mediterranean - ₹3000 for two
+2. **O.G. By The Lake** (Restaurant ID: d_og_88)
+   - Rating: 4.6★
+   - Area: Bellandur
+   - Cuisines: Continental, Italian
+   - Cost for two: 2000
+   - Status: Open now`;
+
+  const parsed = parseDineoutRestaurantsFromText(customMarkdownProse);
+  assert(parsed.length === 2, `Expected 2 parsed restaurants, got ${parsed.length}`);
+  assert(parsed[0].id === "d_pt_77", `Expected ID d_pt_77, got ${parsed[0].id}`);
+  assert(parsed[0].name === "The Persian Terrace", `Expected The Persian Terrace, got ${parsed[0].name}`);
+  assert(parsed[0].costForTwo === 3000, `Expected cost 3000, got ${parsed[0].costForTwo}`);
+  assert(parsed[1].id === "d_og_88", `Expected ID d_og_88, got ${parsed[1].id}`);
+  assert(parsed[1].name === "O.G. By The Lake", `Expected O.G. By The Lake, got ${parsed[1].name}`);
+  assert(parsed[1].avg_rating === 4.6, `Expected rating 4.6, got ${parsed[1].avg_rating}`);
+  assert(parsed[1].isOpen === true, "Expected isOpen true");
+});
+
+await test("42. Regression E: Invalid/malformed text does not create fabricated candidates", () => {
+  const malformedText = `Found 0 restaurant(s) matching "unknown_xyz".
+Note: No restaurants found nearby.
+Please check your location or try another keyword.
+1. Just a numbered note without any restaurant identifier or name.
+- Another bullet with some random notes.
+Warning: Server notice code 502.`;
+
+  const parsed = parseDineoutRestaurantsFromText(malformedText);
+  assert(parsed.length === 0, `Expected 0 candidates for malformed text, got ${parsed.length}`);
+
+  const candidates = normalizeDineoutRestaurantsBatch(parsed);
+  assert(candidates.length === 0, "No candidates normalized from malformed text");
+});
+
+await test("43. Regression F: Existing clarification behavior remains intact", async () => {
+  const ambiguousLocations = [
+    { id: "loc_x1", addressId: "addr_x1", name: "Location 1", isDefault: false },
+    { id: "loc_x2", addressId: "addr_x2", name: "Location 2", isDefault: false },
+  ];
+  const mockClient = createMockDineoutMcpClient({ locations: ambiguousLocations });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "dining" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, "Ambiguous locations return 200 clarification prompt");
+  const data = result.data as any;
+  assert(data.clarificationNeeded === true, "Must flag clarificationNeeded");
+  assert(data.availableLocations.length === 2, "Must return available locations");
+  assert(data.recommendations.length === 0, "No recommendations before clarification");
+});
+
+await test("44. Regression G: Existing locationId to addressId mapping remains intact", async () => {
+  let capturedBody: any = {};
+  const mcpPayloadWithEmptyStructured = {
+    jsonrpc: "2.0",
+    id: 12345,
+    result: {
+      content: [{ type: "text", text: knownProductionProseResponse }],
+      structuredContent: {},
+    },
+  };
+
+  const mockClient = createMockDineoutMcpClient({
+    captureLastRequest: (_url, _headers, body) => {
+      capturedBody = body;
+    },
+    productionEnvelope: mcpPayloadWithEmptyStructured,
+    locations: [
+      {
+        id: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+        addressId: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+        name: "Home",
+        isDefault: true,
+      },
+    ],
+  });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "restaurants", locationId: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, "Execution must succeed with 200");
+  const args = capturedBody.params?.arguments;
+  assert(args.addressId === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "search_restaurants_dineout must receive addressId");
+  assert(args.address_id === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "search_restaurants_dineout must receive address_id");
+  assert(args.locationId === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "search_restaurants_dineout must retain locationId");
+  const data = result.data as any;
+  assert(data.recommendations.length > 0, "Must return ranked recommendations from parsed prose");
 });
 
 console.log(`\n🎉 All ${passedCount} Phase 3 Part 4 Live Dineout Integration tests passed successfully!\n`);

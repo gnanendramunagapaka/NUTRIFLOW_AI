@@ -275,22 +275,273 @@ export function resolveDineoutLocation(
 // ─── 4. MCP Response Extraction ───────────────────────────────────────────────
 
 /**
- * Extracts raw Dineout restaurants from an unwrapped MCP response.
- * Handles structuredContent envelopes, top-level arrays, cards, and items/restaurants arrays.
+ * Defensive parser for raw text responses from Swiggy Dineout MCP tools.
+ * Handles prose listings such as:
+ * "Found 39 restaurant(s) matching "restaurants", showing 10. 29 more available...
+ * 1. Punjab Grill (ID: 101)
+ *    Rating: 4.7
+ *    Cuisine: North Indian, Mughlai
+ *    Cost for two: ₹2200
+ *    Locality: Koramangala"
+ *
+ * Guaranteed defensive:
+ * - Malformed lines are skipped
+ * - Missing optional fields remain undefined
+ * - No fabricated values or nutrition data
+ * - Non-participating warnings are preserved in tags without booking slots
  */
-export function extractDineoutRestaurantsFromMcp(data: unknown): RawSwiggyDineoutRestaurant[] {
-  if (!data) return [];
+export function parseDineoutRestaurantsFromText(text: string): RawSwiggyDineoutRestaurant[] {
+  if (!text || typeof text !== "string") return [];
+
+  const trimmedText = text.trim();
+  if (!trimmedText) return [];
+
+  const results: RawSwiggyDineoutRestaurant[] = [];
+
+  // 1. Check for markdown table format: | Name | ID | ... |
+  const lines = trimmedText.split(/\r?\n/);
+  const tableLines = lines.filter((l) => l.trim().startsWith("|") && l.trim().endsWith("|"));
+  if (tableLines.length >= 3) {
+    const headerLine = tableLines[0].toLowerCase();
+    if (headerLine.includes("name") || headerLine.includes("restaurant") || headerLine.includes("id")) {
+      const headers = tableLines[0].split("|").map((h) => h.trim().toLowerCase()).filter(Boolean);
+      for (let i = 2; i < tableLines.length; i++) {
+        const cells = tableLines[i].split("|").map((c) => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+        if (cells.length < 2) continue;
+        const row: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+          if (cells[idx]) row[h] = cells[idx];
+        });
+
+        const id = row["id"] || row["restaurant_id"] || row["restaurant id"];
+        const name = row["name"] || row["restaurant"] || row["restaurant name"];
+        if (id && name) {
+          const rawRating = parseFloat(row["rating"] || row["avg_rating"] || "");
+          const rating = !isNaN(rawRating) && rawRating >= 0 && rawRating <= 5 ? rawRating : undefined;
+          const locality = row["locality"] || row["location"] || row["area"] || undefined;
+          const cuisineStr = row["cuisine"] || row["cuisines"];
+          const cuisine = cuisineStr ? cuisineStr.split(",").map((c) => c.trim()).filter(Boolean) : undefined;
+          const rawCost = parseInt((row["cost"] || row["cost for two"] || row["price"] || "").replace(/[^0-9]/g, ""), 10);
+          const costForTwo = !isNaN(rawCost) && rawCost > 0 ? rawCost : undefined;
+          results.push({
+            id,
+            restaurant_id: id,
+            name,
+            cuisine,
+            avg_rating: rating,
+            rating,
+            locality,
+            costForTwo,
+            cost_for_two: costForTwo,
+          });
+        }
+      }
+      if (results.length > 0) {
+        return results;
+      }
+    }
+  }
+
+  // 2. Group lines into blocks representing individual restaurant entries
+  const blocks: string[][] = [];
+  let currentBlock: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Skip preamble/header lines
+    if (/^found\s+\d+\s+restaurant/i.test(line) || /^showing\s+\d+/i.test(line)) {
+      continue;
+    }
+
+    const isNumbered = /^(?:#+\s*)?\d+[\.\)]\s+/.test(line);
+    const isAttribute = /^(?:[\*\-\•]\s*)?(?:rating|avg\s*rating|score|locality|area|address|location|cuisine|cuisines|food|cost for two|price for two|cost|price|distance|status|open|offers|slots|id|restaurant\s*id|amenities|coordinates|lat|lng):/i.test(line);
+    const isBullet = /^[-\*•]\s+/.test(line) && !isAttribute;
+    const isNamedHeader = /^(?:restaurant|venue)\s*\d*:\s*/i.test(line);
+
+    if ((isNumbered || isBullet || isNamedHeader) && !isAttribute) {
+      if (currentBlock.length > 0) {
+        blocks.push(currentBlock);
+      }
+      currentBlock = [line];
+    } else {
+      if (currentBlock.length > 0) {
+        currentBlock.push(line);
+      }
+    }
+  }
+  if (currentBlock.length > 0) {
+    blocks.push(currentBlock);
+  }
+
+  for (const block of blocks) {
+    const firstLine = block[0];
+    const fullBlock = block.join(" ");
+
+    // 1. Extract ID
+    let id: string | undefined;
+    const idMatch =
+      fullBlock.match(/[\(\[]\s*(?:restaurant\s*)?id\s*[:#]?\s*([a-zA-Z0-9_-]+)\s*[\)\]]/i) ||
+      fullBlock.match(/\b(?:restaurant\s*)?id\s*[:=]\s*([a-zA-Z0-9_-]+)/i) ||
+      firstLine.match(/\bID\s*[:=]\s*([a-zA-Z0-9_-]+)/i);
+
+    if (idMatch && idMatch[1]) {
+      id = idMatch[1].trim();
+    }
+
+    // 2. Extract Name
+    let nameClean = firstLine
+      .replace(/^(?:#+\s*)?\d+[\.\)]\s*/, "")
+      .replace(/^[-*•]\s*/, "")
+      .replace(/^(?:restaurant|venue)\s*\d*:\s*/i, "")
+      .trim();
+
+    // Strip ID pattern from nameClean
+    nameClean = nameClean.replace(/[\(\[]\s*(?:restaurant\s*)?id\s*[:#]?\s*[a-zA-Z0-9_-]+\s*[\)\]]/gi, "");
+    nameClean = nameClean.replace(/\b(?:restaurant\s*)?id\s*[:=]\s*[a-zA-Z0-9_-]+/gi, "");
+
+    // Strip trailing attributes if on the same line (e.g. " - Rating: 4.5 ...")
+    nameClean = nameClean.replace(/\s*[-|–—]\s*(?:rating|locality|area|address|cuisine|cost|price|₹|rs\.?|distance|status).*$/i, "");
+    nameClean = nameClean.replace(/[*_#`]/g, "").trim();
+
+    // Guardrail: Skip malformed blocks without ID or valid name
+    if (!id || !nameClean || nameClean.length < 2) {
+      continue;
+    }
+
+    // 3. Parse attributes line by line
+    let rating: number | undefined;
+    let locality: string | undefined;
+    let cuisines: string[] | undefined;
+    let costForTwo: number | undefined;
+    let distance: string | undefined;
+    let isOpen: boolean | undefined;
+
+    const attrLines: string[] = [];
+    for (const rawLine of block) {
+      const segments = rawLine.split(/\s+[-|–—]\s+/);
+      attrLines.push(...segments);
+    }
+
+    for (const attrLine of attrLines) {
+      const l = attrLine.trim();
+
+      // Rating
+      if (rating == null) {
+        const ratingMatch =
+          l.match(/(?:rating|avg\s*rating|score)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)/i) ||
+          l.match(/([0-9]+\.[0-9]+)\s*(?:★|stars|\/5|\/ 5)/i) ||
+          l.match(/★\s*([0-9]+(?:\.[0-9]+)?)/i);
+        if (ratingMatch && ratingMatch[1]) {
+          const parsed = parseFloat(ratingMatch[1]);
+          if (!isNaN(parsed) && parsed >= 0 && parsed <= 5) rating = parsed;
+        }
+      }
+
+      // Locality / Area
+      if (locality == null) {
+        const locMatch = l.match(/^(?:[\*\-\•]\s*)?(?:locality|area|location|address)\s*[:=]?\s*([^,\n|–—\(\)]+)/i);
+        if (locMatch && locMatch[1]) {
+          const clean = locMatch[1].replace(/[*_`]/g, "").trim();
+          if (clean && !/^(?:rating|cuisine|cost|price|distance|status)/i.test(clean)) {
+            locality = clean;
+          }
+        }
+      }
+
+      // Cuisines
+      if (cuisines == null) {
+        const cuiMatch = l.match(/^(?:[\*\-\•]\s*)?(?:cuisines?|food)\s*[:=]?\s*([^|\n–—\(\)]+)/i);
+        if (cuiMatch && cuiMatch[1]) {
+          const rawCuisines = cuiMatch[1].replace(/[*_`]/g, "").trim();
+          const parts = rawCuisines.split(/[,/]/).map((c) => c.trim()).filter((c) => c.length > 0 && !/^(?:cost|price|₹|rating|distance)/i.test(c));
+          if (parts.length > 0) cuisines = parts;
+        }
+      }
+
+      // Cost for two
+      if (costForTwo == null) {
+        const costMatch =
+          l.match(/(?:cost\s*for\s*two|price\s*for\s*two|cost|price)\s*[:=]?\s*(?:₹|rs\.?|inr)?\s*([0-9]+)/i) ||
+          l.match(/(?:₹|rs\.?)\s*([0-9]+)\s*(?:for\s*two|\/-\s*for\s*two)?/i);
+        if (costMatch && costMatch[1]) {
+          const parsed = parseInt(costMatch[1], 10);
+          if (!isNaN(parsed) && parsed > 0) costForTwo = parsed;
+        }
+      }
+
+      // Distance
+      if (distance == null) {
+        const distMatch = l.match(/(?:distance\s*[:=]?\s*)?([0-9]+(?:\.[0-9]+)?\s*km)/i);
+        if (distMatch && distMatch[1]) distance = distMatch[1].trim();
+      }
+
+      // Status
+      if (isOpen == null) {
+        if (/\b(?:open\s*now|currently\s*open)\b/i.test(l)) {
+          isOpen = true;
+        } else if (/\b(?:closed\s*now|currently\s*closed)\b/i.test(l)) {
+          isOpen = false;
+        } else {
+          const statusMatch = l.match(/(?:status|open\s*status)\s*[:=]?\s*(open|closed)/i);
+          if (statusMatch && statusMatch[1]) {
+            isOpen = statusMatch[1].toLowerCase() === "open";
+          }
+        }
+      }
+    }
+
+    // 9. Preserve non-participating / booking warning in tags
+    const tags: string[] = [];
+    if (/non-participating|not\s*participating|no\s*table\s*booking|call\s*to\s*reserve/i.test(fullBlock)) {
+      tags.push("non-participating");
+    }
+
+    results.push({
+      id,
+      restaurant_id: id,
+      name: nameClean,
+      cuisine: cuisines,
+      avg_rating: rating,
+      rating,
+      costForTwo,
+      cost_for_two: costForTwo,
+      locality,
+      distance,
+      isOpen,
+      tags: tags.length > 0 ? tags : undefined,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Extracts raw Dineout restaurants from an unwrapped MCP response.
+ * Handles:
+ * 1. Structured responses: structuredContent envelopes, top-level arrays, cards, and items/restaurants arrays.
+ * 2. Controlled text fallback: when structuredContent is empty ({}) or missing and response content contains prose text.
+ */
+export function extractDineoutRestaurantsFromMcp(
+  data: unknown,
+  rawEnvelope?: unknown
+): RawSwiggyDineoutRestaurant[] {
+  if (!data && !rawEnvelope) return [];
 
   let list: unknown[] = [];
 
+  const sourceObj = (data && typeof data === "object") ? (data as Record<string, unknown>) : undefined;
+  const envObj = (rawEnvelope && typeof rawEnvelope === "object") ? (rawEnvelope as Record<string, unknown>) : undefined;
+
+  // 1. Structured data checks
   if (Array.isArray(data)) {
     list = data;
-  } else if (typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-    const structured = (obj.structuredContent && typeof obj.structuredContent === "object")
-      ? (obj.structuredContent as Record<string, unknown>)
-      : (obj.result && typeof obj.result === "object" && (obj.result as any).structuredContent && typeof (obj.result as any).structuredContent === "object")
-      ? ((obj.result as any).structuredContent as Record<string, unknown>)
+  } else if (sourceObj) {
+    const structured = (sourceObj.structuredContent && typeof sourceObj.structuredContent === "object")
+      ? (sourceObj.structuredContent as Record<string, unknown>)
+      : (sourceObj.result && typeof sourceObj.result === "object" && (sourceObj.result as any).structuredContent && typeof (sourceObj.result as any).structuredContent === "object")
+      ? ((sourceObj.result as any).structuredContent as Record<string, unknown>)
       : undefined;
 
     if (structured) {
@@ -304,24 +555,24 @@ export function extractDineoutRestaurantsFromMcp(data: unknown): RawSwiggyDineou
     }
 
     if (list.length === 0) {
-      if (Array.isArray(obj.restaurants)) {
-        list = obj.restaurants;
-      } else if (Array.isArray(obj.dining_restaurants)) {
-        list = obj.dining_restaurants;
-      } else if (Array.isArray(obj.items)) {
-        list = obj.items;
-      } else if (obj.data && typeof obj.data === "object") {
-        const d = obj.data as Record<string, unknown>;
+      if (Array.isArray(sourceObj.restaurants)) {
+        list = sourceObj.restaurants;
+      } else if (Array.isArray(sourceObj.dining_restaurants)) {
+        list = sourceObj.dining_restaurants;
+      } else if (Array.isArray(sourceObj.items)) {
+        list = sourceObj.items;
+      } else if (sourceObj.data && typeof sourceObj.data === "object") {
+        const d = sourceObj.data as Record<string, unknown>;
         if (Array.isArray(d.restaurants)) list = d.restaurants;
         else if (Array.isArray(d.dining_restaurants)) list = d.dining_restaurants;
         else if (Array.isArray(d.items)) list = d.items;
-      } else if (obj.result && typeof obj.result === "object") {
-        const r = obj.result as Record<string, unknown>;
+      } else if (sourceObj.result && typeof sourceObj.result === "object") {
+        const r = sourceObj.result as Record<string, unknown>;
         if (Array.isArray(r.restaurants)) list = r.restaurants;
         else if (Array.isArray(r.dining_restaurants)) list = r.dining_restaurants;
         else if (Array.isArray(r.items)) list = r.items;
-      } else if (Array.isArray(obj.cards)) {
-        for (const card of obj.cards as any[]) {
+      } else if (Array.isArray(sourceObj.cards)) {
+        for (const card of sourceObj.cards as any[]) {
           if (card && typeof card === "object") {
             if (Array.isArray(card.restaurants)) list.push(...card.restaurants);
             else if (Array.isArray(card.items)) list.push(...card.items);
@@ -339,6 +590,21 @@ export function extractDineoutRestaurantsFromMcp(data: unknown): RawSwiggyDineou
     }
   }
 
+  // Also check rawEnvelope for structured data if list is still empty
+  if (list.length === 0 && envObj) {
+    const envStructured = (envObj.structuredContent && typeof envObj.structuredContent === "object")
+      ? (envObj.structuredContent as Record<string, unknown>)
+      : (envObj.result && typeof envObj.result === "object" && (envObj.result as any).structuredContent && typeof (envObj.result as any).structuredContent === "object")
+      ? ((envObj.result as any).structuredContent as Record<string, unknown>)
+      : undefined;
+
+    if (envStructured) {
+      if (Array.isArray(envStructured.restaurants)) list = envStructured.restaurants;
+      else if (Array.isArray(envStructured.dining_restaurants)) list = envStructured.dining_restaurants;
+      else if (Array.isArray(envStructured.items)) list = envStructured.items;
+    }
+  }
+
   const results: RawSwiggyDineoutRestaurant[] = [];
   for (const item of list) {
     if (!item || typeof item !== "object") continue;
@@ -348,7 +614,57 @@ export function extractDineoutRestaurantsFromMcp(data: unknown): RawSwiggyDineou
     }
   }
 
-  return results;
+  if (results.length > 0) {
+    return results;
+  }
+
+  // 2. Controlled fallback: Parse restaurant records from MCP content text
+  let proseText = "";
+  if (typeof data === "string") {
+    proseText = data;
+  } else if (sourceObj) {
+    if (Array.isArray(sourceObj.content) && sourceObj.content.length > 0) {
+      const first = sourceObj.content[0];
+      if (first && typeof first === "object" && typeof (first as any).text === "string") {
+        proseText = (first as any).text;
+      }
+    } else if (sourceObj.result && typeof sourceObj.result === "object") {
+      const r = sourceObj.result as Record<string, unknown>;
+      if (Array.isArray(r.content) && r.content.length > 0) {
+        const first = r.content[0];
+        if (first && typeof first === "object" && typeof (first as any).text === "string") {
+          proseText = (first as any).text;
+        }
+      }
+    } else if (typeof sourceObj.text === "string") {
+      proseText = sourceObj.text;
+    }
+  }
+
+  if (!proseText && envObj) {
+    if (Array.isArray(envObj.content) && envObj.content.length > 0) {
+      const first = envObj.content[0];
+      if (first && typeof first === "object" && typeof (first as any).text === "string") {
+        proseText = (first as any).text;
+      }
+    } else if (envObj.result && typeof envObj.result === "object") {
+      const r = envObj.result as Record<string, unknown>;
+      if (Array.isArray(r.content) && r.content.length > 0) {
+        const first = r.content[0];
+        if (first && typeof first === "object" && typeof (first as any).text === "string") {
+          proseText = (first as any).text;
+        }
+      }
+    } else if (typeof envObj.text === "string") {
+      proseText = envObj.text;
+    }
+  }
+
+  if (proseText) {
+    return parseDineoutRestaurantsFromText(proseText);
+  }
+
+  return [];
 }
 
 // ─── 5. Batch Normalizer ──────────────────────────────────────────────────────

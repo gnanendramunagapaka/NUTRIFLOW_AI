@@ -286,7 +286,11 @@ export function extractSwiggyMcpContent(raw: unknown): unknown {
   const resObj = result as Record<string, unknown>;
 
   // Priority 1: structuredContent (Swiggy MCP standard structured response)
-  if (resObj.structuredContent && typeof resObj.structuredContent === "object") {
+  if (
+    resObj.structuredContent &&
+    typeof resObj.structuredContent === "object" &&
+    Object.keys(resObj.structuredContent).length > 0
+  ) {
     return resObj.structuredContent;
   }
 

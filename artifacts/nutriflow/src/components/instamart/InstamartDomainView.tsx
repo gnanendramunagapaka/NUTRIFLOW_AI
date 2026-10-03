@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useRecommendations, type InstamartRecommendationResponse } from "@/hooks/use-recommendations";
 import { MOCK_INSTAMART_GROCERIES } from "@/lib/mockData";
 import {
   InstamartProductCard,
@@ -53,6 +54,20 @@ export function InstamartDomainView() {
 
   const [dbChecklist, setDbChecklist] = useState<any[]>([]);
   const [loadingChecklist, setLoadingChecklist] = useState(true);
+
+  // Effective query combining search input and category shortcut
+  const effectiveQuery = search.trim() || (activeCategory !== "all" ? activeCategory : undefined);
+
+  // Live Swiggy Instamart recommendations
+  const {
+    data: instamartData,
+    isLoading: loadingCatalog,
+    error: catalogError,
+    refetch: refetchCatalog,
+  } = useRecommendations<InstamartRecommendationResponse>("instamart", {
+    query: effectiveQuery,
+    enabled: activeTab === "catalog",
+  });
 
   // Load database grocery checklist
   const loadChecklist = async () => {
@@ -105,34 +120,65 @@ export function InstamartDomainView() {
     }
   };
 
-  // Filter Instamart Products
-  const filteredProducts: InstamartProductData[] = useMemo(() => {
-    return MOCK_INSTAMART_GROCERIES.map((p) => ({
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      quantity: p.quantity,
-      unit: p.unit,
-      price: p.price,
-      discountPrice: p.discountPrice,
-      discountText: p.discountText,
-      inStock: p.inStock,
-      imageUrl: p.imageUrl,
-      deliveryTime: p.deliveryTime || undefined,
-      description: p.nutritionNote || "Fresh grocery item delivered via Swiggy Instamart",
-    })).filter((p) => {
-      const matchesCategory =
-        activeCategory === "all" ||
-        p.category.toLowerCase().includes(activeCategory.toLowerCase());
+  // Map Live Instamart Recommendations to InstamartProductData
+  const liveProducts: InstamartProductData[] = useMemo(() => {
+    if (!instamartData?.recommendations) return [];
 
-      const matchesSearch =
-        !search ||
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.category.toLowerCase().includes(search.toLowerCase());
+    return instamartData.recommendations.map((rec) => {
+      const c = rec.candidate;
+      const meta = c.sourceMetadata;
+      const mrp = meta?.mrp;
+      const price = c.price ?? mrp ?? 0;
+      const discountText =
+        mrp && price && mrp > price
+          ? `${Math.round(((mrp - price) / mrp) * 100)}% OFF`
+          : undefined;
 
-      return matchesCategory && matchesSearch;
+      return {
+        id: meta?.productId || c.id,
+        name: c.name || "Grocery Item",
+        category: c.categoryTags?.[0] || "Grocery",
+        quantity: meta?.quantity || "",
+        unit: "",
+        price: mrp || price,
+        discountPrice: price < (mrp || price) ? price : undefined,
+        discountText,
+        inStock: c.availability !== "unavailable",
+        rating: meta?.rating,
+        imageUrl: undefined, // Do not fabricate images
+        deliveryTime: undefined,
+        description: rec.explanation || "Fresh grocery item delivered via Swiggy Instamart",
+      };
     });
-  }, [activeCategory, search]);
+  }, [instamartData]);
+
+  // If live API strictly fails with network/server error, allow fallback to MOCK_INSTAMART_GROCERIES
+  const isUsingFallback = Boolean(catalogError && (!instamartData || !instamartData.recommendations));
+  const filteredProducts = isUsingFallback
+    ? MOCK_INSTAMART_GROCERIES.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        quantity: p.quantity,
+        unit: p.unit,
+        price: p.price,
+        discountPrice: p.discountPrice,
+        discountText: p.discountText,
+        inStock: p.inStock,
+        imageUrl: p.imageUrl,
+        deliveryTime: p.deliveryTime || undefined,
+        description: p.nutritionNote || "Fresh grocery item delivered via Swiggy Instamart",
+      })).filter((p) => {
+        const matchesCategory =
+          activeCategory === "all" ||
+          p.category.toLowerCase().includes(activeCategory.toLowerCase());
+        const matchesSearch =
+          !search ||
+          p.name.toLowerCase().includes(search.toLowerCase()) ||
+          p.category.toLowerCase().includes(search.toLowerCase());
+        return matchesCategory && matchesSearch;
+      })
+    : liveProducts;
 
   const handleAddToCart = (product: InstamartProductData) => {
     addToCart({
@@ -310,7 +356,34 @@ export function InstamartDomainView() {
           </div>
 
           {/* Catalog State / Products */}
-          {filteredProducts.length === 0 ? (
+          {loadingCatalog ? (
+            <div className="space-y-4">
+              <Skeleton className="h-5 w-48 rounded-lg" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                  <Skeleton key={i} className="h-56 rounded-2xl" />
+                ))}
+              </div>
+            </div>
+          ) : catalogError && !isUsingFallback ? (
+            <AppCard className="p-8 sm:p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+                <ShoppingBag className="h-6 w-6" />
+              </div>
+              <h3 className="text-sm font-bold text-foreground">Unable to load Instamart groceries</h3>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                {catalogError.message || "Failed to reach Swiggy Instamart recommendations. Please try again."}
+              </p>
+              <SecondaryButton
+                size="sm"
+                onClick={() => refetchCatalog()}
+                className="text-xs gap-1.5"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Retry</span>
+              </SecondaryButton>
+            </AppCard>
+          ) : filteredProducts.length === 0 ? (
             <AppCard className="p-8 sm:p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">
                 <ShoppingBag className="h-6 w-6" />

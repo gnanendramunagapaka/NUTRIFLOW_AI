@@ -209,7 +209,7 @@ export class DineoutMcpClient {
 
       const data = await res.json();
       const content = extractSwiggyMcpContent(data);
-      return extractDineoutRestaurantsFromMcp(content);
+      return extractDineoutRestaurantsFromMcp(content, data);
     } catch (err: any) {
       if (err instanceof SwiggyAuthError || err instanceof SwiggyMcpError) {
         throw err;

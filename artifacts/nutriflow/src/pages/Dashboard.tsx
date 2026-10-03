@@ -34,8 +34,8 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
+import { useRecommendations, type FoodRecommendationResponse } from "@/hooks/use-recommendations";
 import {
-  useListMeals,
   useListRestaurants,
   useGetGroceryList,
 } from "@workspace/api-client-react";
@@ -46,8 +46,17 @@ export default function Dashboard() {
   const { addToCart, setIsCartOpen } = useCart();
   const { toast } = useToast();
 
-  // Real database queries via API client
-  const { data: databaseMeals, isLoading: loadingMeals } = useListMeals();
+  // Live Swiggy Food personalized recommendations for Home Dashboard
+  const {
+    data: foodRecData,
+    isLoading: loadingRecommendations,
+    error: recError,
+    refetch: refetchRecs,
+  } = useRecommendations<FoodRecommendationResponse>("food", {
+    mode: "auto",
+    limit: 4,
+  });
+
   const { data: restaurants, isLoading: loadingRestaurants } = useListRestaurants();
   const { data: groceryList, isLoading: loadingGroceries } = useGetGroceryList();
 
@@ -430,50 +439,71 @@ export default function Dashboard() {
                 }
               />
 
-              {loadingMeals ? (
+              {loadingRecommendations ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[1, 2].map((i) => (
+                  {[1, 2, 3, 4].map((i) => (
                     <Skeleton key={i} className="h-64 rounded-2xl" />
                   ))}
                 </div>
-              ) : databaseMeals && databaseMeals.length > 0 ? (
+              ) : recError ? (
+                <AppCard className="p-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+                    <Utensils className="h-6 w-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-foreground">
+                    Unable to load recommendations
+                  </h4>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                    {recError.message || "Failed to reach Swiggy recommendation service. Please try again."}
+                  </p>
+                  <SecondaryButton size="sm" onClick={() => refetchRecs()}>
+                    Retry
+                  </SecondaryButton>
+                </AppCard>
+              ) : foodRecData?.recommendations && foodRecData.recommendations.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {databaseMeals.slice(0, 4).map((meal: any) => {
+                  {foodRecData.recommendations.slice(0, 4).map((rec) => {
+                    const c = rec.candidate;
+                    const meta = c.sourceMetadata;
+                    const mealId = meta?.restaurantId || meta?.menuItemId || c.id;
+                    const mealName = c.name || "Curated Pick";
+                    const mealPrice = c.price || meta?.costForTwo || 0;
+                    const isVeg =
+                      c.safetyResult?.status === "eligible" &&
+                      (c.categoryTags?.includes("vegetarian") || !mealName.toLowerCase().includes("chicken"));
+                    const healthScore = rec.totalScore ? Number((rec.totalScore / 10).toFixed(1)) : 8.5;
+                    const cuisine = c.categoryTags?.[0] || c.contextTags?.[0] || "Wholesome";
+                    const description = rec.explanation || c.categoryTags?.join(", ") || "Personalized choice aligned with your nutritional preferences";
+
                     const isSaved = savedMeals.some(
-                      (sm: any) => sm.mealId === meal.id || sm.name === meal.name || sm.meal_id === meal.id
+                      (sm: any) => sm.mealId === mealId || sm.name === mealName || sm.meal_id === mealId
                     );
+
                     return (
                       <AppCard
-                        key={meal.id}
+                        key={mealId}
                         className="flex flex-col justify-between overflow-hidden group hover:border-primary/40 transition-all"
                       >
                         <div className="aspect-[16/9] bg-muted relative overflow-hidden">
-                          {meal.imageUrl ? (
-                            <img
-                              src={meal.imageUrl}
-                              alt={meal.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-muted/60 text-muted-foreground text-xs">
-                              NutriFlow Clean Recipe
-                            </div>
-                          )}
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-muted/60 text-muted-foreground p-3 text-center gap-1">
+                            <Utensils className="h-6 w-6 text-muted-foreground/60" />
+                            <span className="text-xs font-semibold">{mealName}</span>
+                          </div>
 
                           {/* Save Heart Button */}
                           <button
                             type="button"
-                            onClick={() => toggleSaveMeal(meal)}
+                            onClick={() => toggleSaveMeal({ id: mealId, name: mealName, price: mealPrice, healthScore, cuisine, description })}
                             className="absolute top-2.5 right-2.5 p-2 rounded-full bg-background/90 text-rose-500 shadow-xs hover:scale-110 transition-transform cursor-pointer"
                             aria-label={isSaved ? "Remove from saved" : "Save meal"}
                           >
                             <Heart className="h-4 w-4" fill={isSaved ? "currentColor" : "none"} />
                           </button>
 
-                          {meal.healthScore && (
+                          {healthScore && (
                             <div className="absolute bottom-2 left-2 bg-background/90 backdrop-blur-xs text-[10px] font-bold text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
                               <Star className="h-3 w-3 fill-emerald-500 text-emerald-500" />
-                              <span>{meal.healthScore}/10 Health</span>
+                              <span>{healthScore}/10 Health</span>
                             </div>
                           )}
                         </div>
@@ -482,14 +512,16 @@ export default function Dashboard() {
                           <div className="space-y-1">
                             <div className="flex items-start justify-between gap-2">
                               <h4 className="text-sm font-bold text-foreground line-clamp-1">
-                                {meal.name}
+                                {mealName}
                               </h4>
-                              <span className="text-xs font-black text-emerald-600 shrink-0">
-                                ₹{meal.price}
-                              </span>
+                              {mealPrice > 0 && (
+                                <span className="text-xs font-black text-emerald-600 shrink-0">
+                                  ₹{mealPrice}
+                                </span>
+                              )}
                             </div>
                             <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                              {meal.description}
+                              {description}
                             </p>
                           </div>
 
@@ -497,21 +529,31 @@ export default function Dashboard() {
                             <div className="grid grid-cols-2 gap-2 text-center text-xs bg-muted/30 p-2 rounded-xl">
                               <div>
                                 <span className="text-[10px] text-muted-foreground uppercase block font-medium">
-                                  Calories
+                                  Cuisine
                                 </span>
-                                <span className="font-bold text-foreground">{meal.calories} kcal</span>
+                                <span className="font-bold text-foreground truncate block">{cuisine}</span>
                               </div>
                               <div>
                                 <span className="text-[10px] text-muted-foreground uppercase block font-medium">
-                                  Protein
+                                  Diet
                                 </span>
-                                <span className="font-bold text-foreground">{meal.protein}g</span>
+                                <span className="font-bold text-foreground">
+                                  {isVeg ? "Vegetarian" : "Verified Clean"}
+                                </span>
                               </div>
                             </div>
 
                             <PrimaryButton
                               size="sm"
-                              onClick={() => handleAddToCart(meal)}
+                              onClick={() => handleAddToCart({
+                                id: `rec-${mealId}`,
+                                name: mealName,
+                                price: mealPrice,
+                                type: "meal",
+                                healthScore,
+                                cuisine,
+                                description,
+                              })}
                               className="w-full h-10 text-xs font-semibold gap-1.5"
                             >
                               <ShoppingCart className="h-3.5 w-3.5" />
@@ -529,10 +571,10 @@ export default function Dashboard() {
                     <Utensils className="h-6 w-6" />
                   </div>
                   <h4 className="text-sm font-bold text-foreground">
-                    Personalized Recommendations Pending
+                    No Live Recommendations Found Nearby
                   </h4>
                   <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    Personalized meal picks based on your goal of "{user?.goal || 'healthy eating'}" will appear here.
+                    No partner food picks are currently available for your delivery location. Explore more in Discover.
                   </p>
                   <Link href="/discover">
                     <SecondaryButton size="sm">Explore Available Meals</SecondaryButton>

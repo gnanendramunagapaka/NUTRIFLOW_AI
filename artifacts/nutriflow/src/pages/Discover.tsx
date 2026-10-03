@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
-import { useListMeals, useListRestaurants } from "@workspace/api-client-react";
+import { useRecommendations, type FoodRecommendationResponse } from "@/hooks/use-recommendations";
 
 import { ExploreDomainTabs } from "@/components/food/ExploreDomainTabs";
 import { RestaurantCard, RestaurantItemData } from "@/components/food/RestaurantCard";
@@ -82,11 +82,30 @@ export default function Discover() {
 
   const [savedMeals, setSavedMeals] = useState<any[]>([]);
 
-  // Real Database Queries
-  const { data: databaseMeals, isLoading: loadingMeals } = useListMeals({
-    search: search || undefined,
+  // Effective query combining search input and category shortcut
+  const effectiveQuery = search.trim() || (activeCategory !== "all" ? activeCategory : undefined);
+
+  // Live Swiggy Food Recommendations for restaurants
+  const {
+    data: foodRecData,
+    isLoading: loadingRestaurants,
+    error: foodRecError,
+    refetch: refetchFoodRecs,
+  } = useRecommendations<FoodRecommendationResponse>("food", {
+    query: effectiveQuery,
+    mode: "restaurants",
+    enabled: activeDomain === "food",
   });
-  const { data: databaseRestaurants, isLoading: loadingRestaurants } = useListRestaurants();
+
+  // Live Swiggy Food Menu Recommendations for selected restaurant sheet
+  const {
+    data: menuRecData,
+    isLoading: loadingMenu,
+  } = useRecommendations<FoodRecommendationResponse>("food", {
+    mode: "menu",
+    restaurantId: selectedRestaurant?.id ? String(selectedRestaurant.id) : undefined,
+    enabled: activeDomain === "food" && Boolean(selectedRestaurant?.id) && isDetailOpen,
+  });
 
   // Load user saved meals
   const loadSavedMeals = async () => {
@@ -194,108 +213,57 @@ export default function Discover() {
     setIsCartOpen(true);
   };
 
-  // Filter Restaurants
+  // Map Live Food Recommendations to RestaurantItemData
   const filteredRestaurants: RestaurantItemData[] = useMemo(() => {
-    if (!databaseRestaurants) return [];
+    if (!foodRecData?.recommendations) return [];
 
-    return databaseRestaurants
-      .map((r: any) => ({
-        id: r.id,
-        name: r.name,
-        cuisine: r.cuisine,
-        rating: r.rating || 4.2,
-        deliveryTime: r.deliveryTime || "25-35 min",
-        costForTwo: r.costForTwo || 350,
-        imageUrl: r.imageUrl,
-        isOpen: true,
-        tags: r.tags || [],
-      }))
-      .filter((r) => {
-        const matchesCategory =
-          activeCategory === "all" ||
-          r.cuisine.toLowerCase().includes(activeCategory.toLowerCase()) ||
-          (r.tags && r.tags.some((t: string) => t.toLowerCase().includes(activeCategory.toLowerCase())));
+    return foodRecData.recommendations.map((rec) => {
+      const c = rec.candidate;
+      const meta = c.sourceMetadata;
+      const cuisine =
+        c.categoryTags?.join(", ") ||
+        c.contextTags?.[0] ||
+        "Multi-Cuisine";
 
-        const matchesSearch =
-          !search ||
-          r.name.toLowerCase().includes(search.toLowerCase()) ||
-          r.cuisine.toLowerCase().includes(search.toLowerCase());
+      return {
+        id: meta?.restaurantId || c.id,
+        name: c.name || "Restaurant Partner",
+        cuisine,
+        rating: meta?.rating,
+        deliveryTime: undefined,
+        costForTwo: meta?.costForTwo,
+        distance: meta?.distance,
+        imageUrl: null,
+        isOpen: c.availability !== "unavailable",
+        tags: c.contextTags || [],
+      };
+    });
+  }, [foodRecData]);
 
-        return matchesCategory && matchesSearch;
-      });
-  }, [databaseRestaurants, activeCategory, search]);
-
-  // Filter Meals / Dishes
-  const filteredMeals: FoodItemData[] = useMemo(() => {
-    if (!databaseMeals) return [];
-
-    return databaseMeals
-      .map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        price: m.price,
-        description: m.description,
-        imageUrl: m.imageUrl,
-        restaurantName: m.restaurantName || "Partner Kitchen",
-        cuisine: m.cuisine,
-        calories: m.calories,
-        protein: m.protein,
-        carbs: m.carbs,
-        fat: m.fat,
-        healthScore: m.healthScore,
-        tags: m.tags || [],
-      }))
-      .filter((m) => {
-        const matchesCategory =
-          activeCategory === "all" ||
-          (m.cuisine && m.cuisine.toLowerCase().includes(activeCategory.toLowerCase())) ||
-          (m.tags && m.tags.some((t: string) => t.toLowerCase().includes(activeCategory.toLowerCase())));
-
-        const matchesSearch =
-          !search ||
-          m.name.toLowerCase().includes(search.toLowerCase()) ||
-          (m.description && m.description.toLowerCase().includes(search.toLowerCase())) ||
-          (m.cuisine && m.cuisine.toLowerCase().includes(search.toLowerCase()));
-
-        return matchesCategory && matchesSearch;
-      });
-  }, [databaseMeals, activeCategory, search]);
-
-  // Menu items for the selected restaurant modal
+  // Live Menu items for the selected restaurant modal
   const selectedRestaurantMenuItems: FoodItemData[] = useMemo(() => {
-    if (!selectedRestaurant || !databaseMeals) return [];
+    if (!menuRecData?.recommendations) return [];
 
-    const directMatches = databaseMeals.filter(
-      (m: any) => m.restaurantId === selectedRestaurant.id
-    );
+    return menuRecData.recommendations.map((rec) => {
+      const c = rec.candidate;
+      const meta = c.sourceMetadata;
+      const isVeg =
+        c.safetyResult?.status === "eligible" &&
+        (c.categoryTags?.includes("vegetarian") || !c.name?.toLowerCase().includes("chicken"));
 
-    if (directMatches.length > 0) {
-      return directMatches.map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        price: m.price,
-        description: m.description,
-        imageUrl: m.imageUrl,
-        restaurantName: selectedRestaurant.name,
-        cuisine: m.cuisine,
-        calories: m.calories,
-        protein: m.protein,
-      }));
-    }
-
-    // Fallback: items with matching cuisine or general partner items
-    return databaseMeals.slice(0, 8).map((m: any) => ({
-      id: m.id,
-      name: m.name,
-      price: m.price,
-      description: m.description,
-      imageUrl: m.imageUrl,
-      restaurantName: selectedRestaurant.name,
-      cuisine: m.cuisine,
-      calories: m.calories,
-      protein: m.protein,
-    }));
-  }, [selectedRestaurant, databaseMeals]);
+      return {
+        id: meta?.menuItemId || c.id,
+        name: c.name || "Menu Item",
+        price: c.price || 0,
+        description: rec.explanation || "",
+        imageUrl: null,
+        restaurantName: selectedRestaurant?.name || meta?.restaurantName,
+        cuisine: selectedRestaurant?.cuisine,
+        isVegetarian: isVeg,
+        healthScore: rec.totalScore ? Number((rec.totalScore / 10).toFixed(1)) : 8.5,
+      };
+    });
+  }, [menuRecData, selectedRestaurant]);
 
   // Open restaurant sheet
   const handleOpenRestaurant = (restaurant: RestaurantItemData) => {
@@ -303,8 +271,8 @@ export default function Discover() {
     setIsDetailOpen(true);
   };
 
-  const hasAnyResults = filteredRestaurants.length > 0 || filteredMeals.length > 0;
-  const isLoading = loadingMeals || loadingRestaurants;
+  const hasAnyResults = filteredRestaurants.length > 0;
+  const isLoading = loadingRestaurants;
 
   return (
     <Layout>
@@ -400,22 +368,34 @@ export default function Discover() {
             ))}
           </div>
 
-        {/* ─── 5. Loading State ─── */}
-        {isLoading ? (
+        {/* ─── 5. Loading / Error / Empty State ─── */}
+        {foodRecError ? (
+          <AppCard className="p-8 sm:p-12 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+              <Utensils className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-foreground">Unable to load live recommendations</h3>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                {foodRecError.message || "Failed to reach Swiggy Food recommendation service. Please try again."}
+              </p>
+            </div>
+            <SecondaryButton
+              size="sm"
+              onClick={() => refetchFoodRecs()}
+              className="text-xs gap-1.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>Retry</span>
+            </SecondaryButton>
+          </AppCard>
+        ) : isLoading ? (
           <div className="space-y-6">
             <div className="space-y-2">
               <Skeleton className="h-5 w-40 rounded-lg" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {[1, 2, 3].map((i) => (
                   <Skeleton key={i} className="h-48 rounded-2xl" />
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-40 rounded-lg" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {[1, 2, 3, 4].map((i) => (
-                  <Skeleton key={i} className="h-64 rounded-2xl" />
                 ))}
               </div>
             </div>
@@ -466,35 +446,6 @@ export default function Discover() {
                 </div>
               </section>
             )}
-
-            {/* B. Popular Food Choices Section */}
-            {filteredMeals.length > 0 && (
-              <section className="space-y-3.5">
-                <SectionHeader
-                  title="Popular Food Choices"
-                  subtitle="Explore wholesome dishes available for delivery"
-                />
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filteredMeals.map((meal) => {
-                    const isSaved = savedMeals.some(
-                      (sm: any) => sm.mealId === meal.id || sm.name === meal.name || sm.meal_id === meal.id
-                    );
-
-                    return (
-                      <FoodItemCard
-                        key={meal.id}
-                        item={meal}
-                        onAddToCart={() => handleAddToCart(meal)}
-                        onSelect={(item) => setSelectedMealForDetail(item)}
-                        onToggleSave={() => toggleSaveMeal(meal)}
-                        isSaved={isSaved}
-                      />
-                    );
-                  })}
-                </div>
-              </section>
-            )}
           </div>
         )}
 
@@ -504,7 +455,7 @@ export default function Discover() {
           isOpen={isDetailOpen}
           onClose={() => setIsDetailOpen(false)}
           menuItems={selectedRestaurantMenuItems}
-          isLoadingMenu={loadingMeals}
+          isLoadingMenu={loadingMenu}
         />
 
         {/* ─── 9. Food Item Detail Sheet ─── */}
