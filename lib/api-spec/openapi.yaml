@@ -574,7 +574,7 @@ components:
         name:
           type: string
         email:
-          type: string
+          type: ["string", "null"]
         isEmailVerified:
           type: boolean
         onboardingCompleted:
@@ -612,7 +612,6 @@ components:
       required:
         - id
         - name
-        - email
         - isEmailVerified
         - onboardingCompleted
         - goal
@@ -626,6 +625,8 @@ components:
       properties:
         name:
           type: string
+        email:
+          type: ["string", "null"]
         age:
           type: integer
         weight:

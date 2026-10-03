@@ -8,6 +8,7 @@
 
 export interface UserProfileInput {
   name?: string;
+  email?: string | null;
   age?: number;
   weight?: number;
   height?: number;

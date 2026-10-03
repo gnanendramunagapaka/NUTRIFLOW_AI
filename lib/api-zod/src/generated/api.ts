@@ -200,7 +200,7 @@ export const ToggleGroceryItemResponse = zod.object({
 export const GetProfileResponse = zod.object({
   "id": zod.union([zod.string(), zod.number()]),
   "name": zod.string(),
-  "email": zod.string(),
+  "email": zod.string().nullish(),
   "isEmailVerified": zod.boolean().default(false),
   "onboardingCompleted": zod.boolean(),
   "age": zod.number().nullish(),
@@ -224,6 +224,7 @@ export const GetProfileResponse = zod.object({
  */
 export const UpdateProfileBody = zod.object({
   "name": zod.string().optional(),
+  "email": zod.string().nullish(),
   "age": zod.number().optional(),
   "weight": zod.number().optional(),
   "height": zod.number().optional(),
@@ -240,7 +241,7 @@ export const UpdateProfileBody = zod.object({
 export const UpdateProfileResponse = zod.object({
   "id": zod.union([zod.string(), zod.number()]),
   "name": zod.string(),
-  "email": zod.string(),
+  "email": zod.string().nullish(),
   "isEmailVerified": zod.boolean().default(false),
   "onboardingCompleted": zod.boolean(),
   "age": zod.number().nullish(),

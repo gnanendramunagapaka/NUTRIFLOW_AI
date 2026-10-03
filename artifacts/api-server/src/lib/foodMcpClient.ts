@@ -122,10 +122,17 @@ export class FoodMcpClient {
    */
   async searchRestaurants(
     userToken: string,
-    args: { query?: string; address_id?: string; lat?: number; lng?: number }
+    args: { query?: string; address_id?: string; addressId?: string; lat?: number; lng?: number }
   ): Promise<RawSwiggyFoodRestaurant[]> {
     if (!userToken) {
       throw new SwiggyAuthError("Missing Swiggy access token");
+    }
+
+    const addressId = args?.address_id || args?.addressId;
+    const toolArguments: Record<string, unknown> = { ...(args || {}) };
+    if (addressId) {
+      toolArguments.address_id = addressId;
+      toolArguments.addressId = addressId;
     }
 
     try {
@@ -138,7 +145,7 @@ export class FoodMcpClient {
           method: "tools/call",
           params: {
             name: "search_restaurants",
-            arguments: args || {},
+            arguments: toolArguments,
           },
         }),
       });

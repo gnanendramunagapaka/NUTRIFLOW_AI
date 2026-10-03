@@ -9,7 +9,8 @@
 export interface UserProfile {
   id: number;
   name: string;
-  email: string;
+  /** @nullable */
+  email?: string | null;
   isEmailVerified: boolean;
   onboardingCompleted: boolean;
   /** @nullable */

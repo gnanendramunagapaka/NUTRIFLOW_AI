@@ -8,3 +8,5 @@ export * from "./recommendationRanking";
 export * from "./recommendationService";
 export * from "./swiggyAdapters";
 export * from "./foodRecommendations";
+export * from "./instamartRecommendations";
+export * from "./dineoutRecommendations";
