@@ -7,6 +7,7 @@ import openaiRouter from "./openai";
 import authRouter from "./auth";
 import cartRouter from "./cart";
 import swiggyRouter from "./swiggyMcp";
+import recommendationsRouter from "./recommendations";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(openaiRouter);
 router.use(authRouter);
 router.use(cartRouter);
 router.use(swiggyRouter);
+router.use(recommendationsRouter);
 
 export default router;

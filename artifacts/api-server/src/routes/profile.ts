@@ -25,6 +25,19 @@ router.get("/profile", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
+import { buildProfileContextFromProfile } from "../lib/profileContext";
+
+router.get("/profile/context", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const profile = req.user!;
+    const profileContext = buildProfileContextFromProfile(profile);
+    res.json({ profile: profileContext });
+  } catch (error) {
+    console.error("GET /profile/context error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 import { onboardingPreferencesTable } from "@workspace/db";
 
 router.patch("/profile", requireAuth, async (req, res): Promise<void> => {
