@@ -4,7 +4,9 @@ import { buildProfileContextFromProfile } from "../lib/profileContext";
 import {
   RecommendationRequestSchema,
   executeSharedRecommendation,
+  FoodRecommendationRequestSchema,
 } from "@workspace/api-zod";
+import { executeFoodRecommendation } from "../lib/foodRecommendationService";
 
 const router: IRouter = Router();
 
@@ -51,4 +53,46 @@ router.post("/recommendations", requireAuth, async (req, res): Promise<void> => 
   }
 });
 
+/**
+ * POST /recommendations/food (mounted under /api -> POST /api/recommendations/food)
+ *
+ * Authenticated endpoint for Live Swiggy Food Discovery & Personalized Recommendations.
+ *
+ * Flow:
+ * 1. Authenticate user session strictly via requireAuth middleware.
+ * 2. Validate request payload against FoodRecommendationRequestSchema.
+ * 3. Invoke executeFoodRecommendation:
+ *    - Resolves user's active Swiggy OAuth token (returns 401 requires_reauth if missing/expired)
+ *    - Resolves user's delivery address via Swiggy MCP get_addresses (or prompts clarification)
+ *    - Queries Swiggy Food MCP (search_restaurants, get_restaurant_menu, or search_menu)
+ *    - Normalizes raw Swiggy items via Phase 3 Part 1 Swiggy Food Adapter
+ *    - Executes Phase 2 Shared Recommendation Service (Safety -> Matching -> Ranking)
+ * 4. Returns ranked, personalized food recommendations.
+ */
+router.post("/recommendations/food", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized: Missing authenticated user" });
+      return;
+    }
+
+    const parsed = FoodRecommendationRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Invalid food recommendation request payload",
+        details: parsed.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`),
+      });
+      return;
+    }
+
+    const result = await executeFoodRecommendation(user, parsed.data);
+    res.status(result.status).json(result.data);
+  } catch (error: any) {
+    console.error("[Food Recommendations Route] Execution error:", error?.message ?? error);
+    res.status(500).json({ error: "Failed to generate food recommendations" });
+  }
+});
+
 export default router;
+

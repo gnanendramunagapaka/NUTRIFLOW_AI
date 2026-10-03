@@ -6,3 +6,5 @@ export * from "./goalPreferenceMatching";
 export * from "./currentContext";
 export * from "./recommendationRanking";
 export * from "./recommendationService";
+export * from "./swiggyAdapters";
+export * from "./foodRecommendations";
