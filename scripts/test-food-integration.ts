@@ -215,6 +215,7 @@ function createMockMcpClient(options?: {
   failStatus?: number;
   throwAuthError?: boolean;
   throwMcpError?: boolean;
+  productionEnvelopeAddresses?: any;
 }) {
   const customFetch: typeof fetch = async (url, init): Promise<Response> => {
     const urlStr = String(url);
@@ -249,6 +250,12 @@ function createMockMcpClient(options?: {
     // JSON-RPC tools/call
     const toolName = bodyJson.params?.name;
     if (toolName === "get_addresses") {
+      if (options?.productionEnvelopeAddresses) {
+        return new Response(
+          JSON.stringify(options.productionEnvelopeAddresses),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -811,7 +818,167 @@ console.log("30. Testing executeFoodRecommendation Swiggy MCP 502 Error");
   console.log("   ✓ Upstream MCP outage returns controlled 502 without data fabrication");
 }
 
+// ─── Test 31: Regression: Production Swiggy MCP get_addresses Envelope Parsing ─
+console.log("31. Testing Regression: Production Swiggy MCP get_addresses structuredContent Parsing");
+const productionMcpAddressResponse = {
+  jsonrpc: "2.0",
+  id: 1727942800000,
+  result: {
+    content: [
+      {
+        type: "text",
+        text: "Found 4 saved addresses (page 1 of 1, showing 4):\n1. [Home] Flat 101, Sunshine Apts, Indiranagar\n2. [Work] Tech Park, Building 3, Outer Ring Road\n3. [Other] House 12, Koramangala 4th Block\n4. [Home] Villa 7, Whitefield",
+      },
+    ],
+    structuredContent: {
+      addresses: [
+        {
+          id: "addr_prod_101",
+          addressLine: "Flat 101, Sunshine Apts, Indiranagar",
+          addressCategory: "Home",
+          addressTag: "Home",
+          phoneNumber: "9876543210",
+          city: "Bengaluru",
+          latitude: 12.9716,
+          longitude: 77.5946,
+        },
+        {
+          id: "addr_prod_102",
+          addressLine: "Tech Park, Building 3, Outer Ring Road",
+          addressCategory: "Work",
+          addressTag: "Work",
+          phoneNumber: "9876543210",
+          city: "Bengaluru",
+          latitude: 12.9352,
+          longitude: 77.6946,
+        },
+        {
+          id: "addr_prod_103",
+          addressLine: "House 12, Koramangala 4th Block",
+          addressCategory: "Other",
+          addressTag: "Other",
+          phoneNumber: "9876543210",
+          city: "Bengaluru",
+          latitude: 12.9345,
+          longitude: 77.6265,
+        },
+        {
+          id: "addr_prod_104",
+          addressLine: "Villa 7, Whitefield",
+          addressCategory: "Home",
+          addressTag: "Home",
+          phoneNumber: "9876543210",
+          city: "Bengaluru",
+          latitude: 12.9698,
+          longitude: 77.75,
+        },
+      ],
+      total: 4,
+      resolution: {
+        defaultAddressId: "addr_prod_101",
+        needsUserClarification: true,
+        candidateAddressIds: ["addr_prod_101", "addr_prod_102", "addr_prod_103", "addr_prod_104"],
+      },
+    },
+  },
+};
+
+{
+  // 1. Verify extractSwiggyMcpContent preserves structuredContent even when content[0].text is prose markdown
+  const unwrapped: any = extractSwiggyMcpContent(productionMcpAddressResponse);
+  assert(unwrapped && typeof unwrapped === "object", "Unwrapped content is object");
+  assert(Array.isArray(unwrapped.addresses), "Unwrapped addresses array exists");
+  assert(unwrapped.addresses.length === 4, "Extracted 4 addresses in structuredContent");
+
+  // 2. Verify extractSwiggyAddresses extracts from production envelope directly
+  const addrsFromRaw = extractSwiggyAddresses(productionMcpAddressResponse);
+  assert(addrsFromRaw.length === 4, "Direct extraction found all 4 addresses");
+  assert(addrsFromRaw[0].id === "addr_prod_101", "Preserves ID of first address");
+  assert(addrsFromRaw[0].address === "Flat 101, Sunshine Apts, Indiranagar", "Maps addressLine to address");
+  assert(addrsFromRaw[0].name === "Home", "Maps addressCategory/addressTag to name");
+  assert(addrsFromRaw[0].city === "Bengaluru", "Preserves city");
+  assert(addrsFromRaw[0].lat === 12.9716, "Preserves latitude");
+  assert(addrsFromRaw[0].lng === 77.5946, "Preserves longitude");
+
+  // 3. Verify extractSwiggyAddresses extracts from unwrapped structuredContent
+  const addrsFromUnwrapped = extractSwiggyAddresses(unwrapped);
+  assert(addrsFromUnwrapped.length === 4, "Extraction from unwrapped structuredContent found 4 addresses");
+  console.log("   ✓ Production Swiggy MCP get_addresses response with markdown prose and structuredContent correctly parsed");
+}
+
+// ─── Test 32: Regression: Multiple Ambiguous Addresses Require Clarification ───
+console.log("32. Testing Regression: Ambiguous multiple addresses trigger clarification");
+{
+  const addrs = extractSwiggyAddresses(productionMcpAddressResponse);
+  // When no addressId is requested and needsUserClarification is true
+  const resolved = resolveSwiggyAddress(addrs);
+  assert(resolved.success === false, "Does not silently pick arbitrary address");
+  assert(resolved.clarificationNeeded === true, "Clarification is flagged as true");
+  assert(resolved.availableAddresses?.length === 4, "All 4 available addresses returned for user choice");
+  console.log("   ✓ Multiple addresses with clarification flag correctly trigger clarification without guessing");
+}
+
+// ─── Test 33: Regression: Explicit addressId Resolves Successfully ────────────
+console.log("33. Testing Regression: Explicit addressId selection from production addresses");
+{
+  const addrs = extractSwiggyAddresses(productionMcpAddressResponse);
+  const resolved = resolveSwiggyAddress(addrs, "addr_prod_102");
+  assert(resolved.success === true, "Explicit addressId resolved successfully");
+  assert(resolved.address?.id === "addr_prod_102", "Matched exact requested address ID");
+  assert(resolved.address?.name === "Work", "Matched address name");
+  assert(resolved.clarificationNeeded === false, "Clarification not needed when explicit ID provided");
+  console.log("   ✓ Explicit addressId correctly selects requested address from production MCP list");
+}
+
+// ─── Test 34: Regression: Zero Addresses Produces Controlled Error ────────────
+console.log("34. Testing Regression: Zero addresses still produces controlled error");
+{
+  const resolved = resolveSwiggyAddress([]);
+  assert(resolved.success === false, "Zero addresses yields failure");
+  assert(resolved.clarificationNeeded === false, "Clarification is not triggered for empty list");
+  assert(
+    resolved.error === "No delivery addresses found on your Swiggy account. Please add an address on Swiggy.",
+    "Exact error message returned"
+  );
+  console.log("   ✓ Zero addresses correctly produces controlled error without false positive behavior");
+}
+
+// ─── Test 35: Regression: End-to-End executeFoodRecommendation with Production Envelope
+console.log("35. Testing Regression: executeFoodRecommendation with production MCP get_addresses envelope");
+{
+  const client = createMockMcpClient({
+    productionEnvelopeAddresses: productionMcpAddressResponse,
+  });
+
+  // Flow A: Request WITHOUT addressId should return HTTP 200 with clarificationNeeded: true (TEST B scenario)
+  const resClarify = await executeFoodRecommendation(
+    mockProfileUser,
+    { mode: "restaurants", query: "biryani" },
+    { mcpClient: client, getTokenFn: async () => "valid_token" }
+  );
+  assert(resClarify.status === 200, "Ambiguous request returns HTTP 200 (not 400 error)");
+  const clarifyData = resClarify.data as any;
+  assert(clarifyData.clarificationNeeded === true, "Returns clarificationNeeded: true");
+  assert(clarifyData.availableAddresses?.length === 4, "Returns 4 available addresses");
+  assert(clarifyData.availableAddresses[0].id === "addr_prod_101", "First address ID matches");
+
+  // Flow B: Request WITH explicit addressId should resolve and return HTTP 200 recommendations (TEST C scenario)
+  const resWithAddress = await executeFoodRecommendation(
+    mockProfileUser,
+    { mode: "restaurants", query: "biryani", addressId: "addr_prod_102" },
+    { mcpClient: client, getTokenFn: async () => "valid_token" }
+  );
+  assert(resWithAddress.status === 200, "Explicit addressId returns HTTP 200");
+  const recData = resWithAddress.data as any;
+  assert(recData.clarificationNeeded !== true, "Does not need clarification");
+  assert(recData.addressUsed?.id === "addr_prod_102", "Used requested address addr_prod_102");
+  assert(recData.recommendations.length > 0, "Returned food recommendations");
+
+  console.log("   ✓ End-to-end recommendation flow handles production MCP envelope with both clarification and explicit address selection");
+}
+
 console.log("\n==================================================================");
-console.log("🎉 ALL 30 FOOD INTEGRATION TESTS PASSED SUCCESSFULLY!");
+console.log("🎉 ALL 35 FOOD INTEGRATION TESTS PASSED SUCCESSFULLY!");
 console.log("==================================================================\n");
+
 

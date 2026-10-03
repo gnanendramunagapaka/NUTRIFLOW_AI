@@ -61,23 +61,7 @@ export class FoodMcpClient {
     }
 
     try {
-      // 1. Direct endpoint attempt (primary in production MCP integration)
-      const res = await this.fetchFn(`${this.foodBaseUrl}/get_addresses`, {
-        method: "POST",
-        headers: this.getHeaders(userToken),
-        body: JSON.stringify({}),
-      });
-
-      if (res.status === 401) {
-        throw new SwiggyAuthError();
-      }
-
-      if (res.ok) {
-        const raw = await res.json();
-        return extractSwiggyAddresses(raw);
-      }
-
-      // 2. Fallback to standard MCP tools/call get_addresses
+      // 1. Standard MCP tools/call get_addresses (matches production handleMcpToolCall route)
       const mcpRes = await this.fetchFn(this.foodBaseUrl, {
         method: "POST",
         headers: this.getHeaders(userToken),
@@ -96,14 +80,35 @@ export class FoodMcpClient {
         throw new SwiggyAuthError();
       }
 
-      if (!mcpRes.ok) {
-        const errText = await mcpRes.text().catch(() => "");
-        throw new SwiggyMcpError(`Swiggy address retrieval failed (${mcpRes.status}): ${errText}`);
+      if (mcpRes.ok) {
+        const mcpData = await mcpRes.json();
+        const content = extractSwiggyMcpContent(mcpData);
+        const addresses = extractSwiggyAddresses(content);
+        if (addresses.length > 0) {
+          return addresses;
+        }
+        // Fallback: extract directly from the raw MCP JSON-RPC envelope
+        return extractSwiggyAddresses(mcpData);
       }
 
-      const mcpData = await mcpRes.json();
-      const content = extractSwiggyMcpContent(mcpData);
-      return extractSwiggyAddresses(content);
+      // 2. Fallback to direct /get_addresses endpoint
+      const res = await this.fetchFn(`${this.foodBaseUrl}/get_addresses`, {
+        method: "POST",
+        headers: this.getHeaders(userToken),
+        body: JSON.stringify({}),
+      });
+
+      if (res.status === 401) {
+        throw new SwiggyAuthError();
+      }
+
+      if (res.ok) {
+        const raw = await res.json();
+        return extractSwiggyAddresses(raw);
+      }
+
+      const errText = await mcpRes.text().catch(() => "");
+      throw new SwiggyMcpError(`Swiggy address retrieval failed (${mcpRes.status}): ${errText}`);
     } catch (err: any) {
       if (err instanceof SwiggyAuthError || err instanceof SwiggyMcpError) {
         throw err;
