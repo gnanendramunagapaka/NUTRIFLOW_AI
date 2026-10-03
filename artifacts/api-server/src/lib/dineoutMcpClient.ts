@@ -146,22 +146,42 @@ export class DineoutMcpClient {
    */
   async searchRestaurantsDineout(
     userToken: string,
-    args: { query?: string; location_id?: string; locationId?: string; lat?: number; lng?: number }
+    args: {
+      query?: string;
+      location_id?: string;
+      locationId?: string;
+      address_id?: string;
+      addressId?: string;
+      lat?: number;
+      lng?: number;
+      latitude?: number;
+      longitude?: number;
+    }
   ): Promise<RawSwiggyDineoutRestaurant[]> {
     if (!userToken) {
       throw new SwiggyAuthError("Missing Swiggy access token");
     }
 
-    const locationId = args.location_id || args.locationId;
+    const targetAddressId = args.addressId || args.address_id || args.locationId || args.location_id;
     const toolArguments: Record<string, unknown> = {};
 
     if (args.query) toolArguments.query = args.query;
-    if (locationId) {
-      toolArguments.location_id = locationId;
-      toolArguments.locationId = locationId;
+    if (targetAddressId) {
+      toolArguments.addressId = targetAddressId;
+      toolArguments.address_id = targetAddressId;
+      toolArguments.locationId = targetAddressId;
+      toolArguments.location_id = targetAddressId;
     }
-    if (typeof args.lat === "number") toolArguments.lat = args.lat;
-    if (typeof args.lng === "number") toolArguments.lng = args.lng;
+    const lat = typeof args.lat === "number" ? args.lat : typeof args.latitude === "number" ? args.latitude : undefined;
+    const lng = typeof args.lng === "number" ? args.lng : typeof args.longitude === "number" ? args.longitude : undefined;
+    if (typeof lat === "number" && !isNaN(lat)) {
+      toolArguments.lat = lat;
+      toolArguments.latitude = lat;
+    }
+    if (typeof lng === "number" && !isNaN(lng)) {
+      toolArguments.lng = lng;
+      toolArguments.longitude = lng;
+    }
 
     try {
       const res = await this.fetchFn(this.dineoutBaseUrl, {

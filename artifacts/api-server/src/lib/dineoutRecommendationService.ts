@@ -110,10 +110,13 @@ export async function executeDineoutRecommendation(
       profileContext.dietary.cuisinePreferences?.[0] ||
       "restaurants";
 
+    const targetAddressId = selectedLocation.addressId || selectedLocation.id;
     const rawRestaurants: RawSwiggyDineoutRestaurant[] = await mcpClient.searchRestaurantsDineout(
       userToken,
       {
         query: explicitQuery,
+        addressId: targetAddressId,
+        address_id: targetAddressId,
         location_id: selectedLocation.id,
         locationId: selectedLocation.id,
         lat: selectedLocation.lat,

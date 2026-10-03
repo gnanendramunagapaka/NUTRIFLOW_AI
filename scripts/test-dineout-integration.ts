@@ -861,4 +861,144 @@ await test("32. Real production Swiggy Dineout MCP reachability", async () => {
   }
 });
 
+await test("33. A. Valid selected NutriFlow location resolves to the correct Swiggy addressId", () => {
+  const rawLocations = [
+    {
+      id: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+      addressId: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+      name: "Home",
+      address: "123 Indiranagar, Bengaluru",
+      isDefault: true,
+    },
+    {
+      location_id: "loc_work_456",
+      addressId: "addr_work_789",
+      name: "Work",
+      address: "Tech Park, Whitefield",
+      isDefault: false,
+    },
+  ];
+
+  const extracted = extractDineoutLocations(rawLocations);
+  assert(extracted.length === 2, "Should extract 2 locations");
+  assert(extracted[0].addressId === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "First location addressId must match");
+  assert(extracted[1].addressId === "addr_work_789", "Second location addressId must match");
+
+  const resolved = resolveDineoutLocation(extracted, "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst");
+  assert(resolved.success === true, "Must successfully resolve location");
+  assert(resolved.location?.addressId === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "Resolved location addressId must match");
+});
+
+await test("34. B. search_restaurants_dineout receives the correct addressId and dual fields", async () => {
+  let capturedBody: any = {};
+  const mockClient = createMockDineoutMcpClient({
+    captureLastRequest: (_url, _headers, body) => {
+      capturedBody = body;
+    },
+    locations: [
+      {
+        id: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+        addressId: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+        name: "Home",
+        address: "123 Indiranagar, Bengaluru",
+        isDefault: true,
+        lat: 12.9716,
+        lng: 77.5946,
+      },
+    ],
+  });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "biryani", locationId: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, "Request must succeed with 200");
+  assert(capturedBody.params?.name === "search_restaurants_dineout", "Must call search_restaurants_dineout");
+  const args = capturedBody.params?.arguments;
+  assert(args.addressId === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "search_restaurants_dineout must receive addressId");
+  assert(args.address_id === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "search_restaurants_dineout must receive address_id");
+  assert(args.locationId === "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "search_restaurants_dineout must retain locationId");
+  assert(args.query === "biryani", "Query must match");
+  assert(args.lat === 12.9716 && args.latitude === 12.9716, "Must pass lat and latitude");
+  assert(args.lng === 77.5946 && args.longitude === 77.5946, "Must pass lng and longitude");
+});
+
+await test("35. C. Existing clarification behavior still works when multiple locations exist and none selected", async () => {
+  const ambiguousLocations = [
+    { id: "loc_1", addressId: "addr_1", name: "Location 1", isDefault: false },
+    { id: "loc_2", addressId: "addr_2", name: "Location 2", isDefault: false },
+  ];
+  const mockClient = createMockDineoutMcpClient({ locations: ambiguousLocations });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "pasta" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, "Ambiguous locations return 200 clarification prompt");
+  const data = result.data as any;
+  assert(data.clarificationNeeded === true, "Must flag clarificationNeeded");
+  assert(data.availableLocations.length === 2, "Must return available locations");
+  assert(data.recommendations.length === 0, "No recommendations before clarification");
+});
+
+await test("36. D. Invalid/cross-user location IDs remain rejected", async () => {
+  const userLocations = [
+    { id: "user_addr_1", addressId: "user_addr_1", name: "User Home", isDefault: true },
+  ];
+  const mockClient = createMockDineoutMcpClient({ locations: userLocations });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "pasta", locationId: "attacker_foreign_location_999" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  const data = result.data as any;
+  assert(data.clarificationNeeded === true, "Must flag clarificationNeeded when requested location is not user's");
+  assert(data.recommendations.length === 0, "No recommendations executed for invalid location");
+  assert(data.availableLocations?.length === 1 && data.availableLocations[0].id === "user_addr_1", "Only user's own locations are presented");
+  assert(!data.locationUsed, "Attacker location must NOT be used");
+});
+
+await test("37. E. Existing Dineout behavior remains intact with addressId resolution and coordinate pass-through", async () => {
+  let capturedBody: any = {};
+  const mockClient = createMockDineoutMcpClient({
+    captureLastRequest: (_url, _headers, body) => {
+      capturedBody = body;
+    },
+    locations: rawLocationList,
+    restaurants: rawRestaurantList,
+  });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "north indian" },
+    {
+      mcpClient: mockClient,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, "Default execution must succeed");
+  const data = result.data as any;
+  assert(data.locationUsed?.id === "loc_dine_koramangala", "Default location must be used");
+  assert(data.recommendations.length > 0, "Must have recommendations");
+  assert(capturedBody.params?.arguments.addressId === "loc_dine_koramangala", "Outgoing call must have addressId matching default location");
+  assert(capturedBody.params?.arguments.lat === 12.9352, "Latitude must be passed");
+  assert(capturedBody.params?.arguments.lng === 77.6245, "Longitude must be passed");
+});
+
 console.log(`\n🎉 All ${passedCount} Phase 3 Part 4 Live Dineout Integration tests passed successfully!\n`);

@@ -18,6 +18,7 @@ import { extractSwiggyMcpContent } from "./foodRecommendations";
 
 export const DineoutLocationSchema = z.object({
   id: z.string(),
+  addressId: z.string().optional(),
   name: z.string().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
@@ -139,11 +140,14 @@ export function extractDineoutLocations(raw: unknown): DineoutLocation[] {
   for (const item of candidateList) {
     if (!item || typeof item !== "object") continue;
     const it = item as Record<string, unknown>;
-    const rawId = it.id ?? it.location_id ?? it.locationId ?? it.address_id ?? it._id;
+    const rawId = it.id ?? it.addressId ?? it.address_id ?? it.location_id ?? it.locationId ?? it._id;
     if (rawId == null) continue;
 
     const id = String(rawId).trim();
     if (!id) continue;
+
+    const rawAddressId = it.addressId ?? it.address_id ?? it.id;
+    const addressId = rawAddressId != null ? String(rawAddressId).trim() : id;
 
     const name = typeof it.name === "string" ? it.name.trim() : typeof it.title === "string" ? it.title.trim() : undefined;
     const address = typeof it.address === "string"
@@ -191,6 +195,7 @@ export function extractDineoutLocations(raw: unknown): DineoutLocation[] {
 
     results.push({
       id,
+      addressId: addressId || id,
       name: name || label,
       address,
       city,
@@ -223,7 +228,7 @@ export function resolveDineoutLocation(
   // 1. If explicit location ID requested, locate it strictly
   if (requestedLocationId && requestedLocationId.trim()) {
     const targetId = requestedLocationId.trim();
-    const matched = locations.find((l) => l.id === targetId);
+    const matched = locations.find((l) => l.id === targetId || l.addressId === targetId);
     if (matched) {
       return {
         success: true,
