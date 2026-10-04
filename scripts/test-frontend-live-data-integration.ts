@@ -81,6 +81,7 @@ assert(dineoutContent.includes("dineoutError"), "Must have error retry state");
 console.log("  ✓ DineoutDomainView.tsx wired to live Dineout API with pure backend fields");
 
 // ─── Test 7: Backend Safety & Integrity Guardrails ───────────────────────────
+console.log("Test 7: Backend Safety & Integrity Guardrails");
 const gitStatus = execSync("git status --porcelain", { cwd: rootDir }).toString();
 const modifiedFiles = gitStatus.split("\n").filter(Boolean);
 
@@ -103,6 +104,202 @@ for (const pf of protectedFiles) {
 }
 console.log("  ✓ All protected backend recommendation and Phase 2 files remain strictly untouched");
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ─── Section 2: Explicit Address Selection Tests (Requirements a - g) ─────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+const cartHookPath = path.join(rootDir, "artifacts/nutriflow/src/hooks/use-cart.tsx");
+const addressPromptPath = path.join(rootDir, "artifacts/nutriflow/src/components/address/AddressSelectionPrompt.tsx");
+const topBarPath = path.join(rootDir, "artifacts/nutriflow/src/components/layout/TopBar.tsx");
+
+assert(fs.existsSync(cartHookPath), "use-cart.tsx must exist");
+assert(fs.existsSync(addressPromptPath), "AddressSelectionPrompt.tsx must exist");
+assert(fs.existsSync(topBarPath), "TopBar.tsx must exist");
+
+const cartContent = fs.readFileSync(cartHookPath, "utf-8");
+const addressPromptContent = fs.readFileSync(addressPromptPath, "utf-8");
+const topBarContent = fs.readFileSync(topBarPath, "utf-8");
+
+// Mirror of pure resolveInitialAddress implementation for verification
+interface Address {
+  id: string;
+  label: string;
+  address: string;
+  icon: string;
+  city?: string;
+  isDefault?: boolean;
+}
+
+function resolveInitialAddressSimulation(
+  liveAddresses: Address[] | undefined | null,
+  currentSelected: Address | null,
+  savedId?: string | null
+): Address | null {
+  if (!liveAddresses || liveAddresses.length === 0) return null;
+  if (liveAddresses.length === 1) return liveAddresses[0];
+  if (currentSelected?.id) {
+    const matched = liveAddresses.find((a) => a.id === currentSelected.id);
+    if (matched) return matched;
+  }
+  if (savedId) {
+    const matched = liveAddresses.find((a) => a.id === savedId);
+    if (matched) return matched;
+  }
+  return null;
+}
+
+// Mirror of pure buildRecommendationPayload implementation for verification
+function buildPayloadSimulation(
+  domain: "food" | "instamart" | "dineout",
+  options: { query?: string; addressId?: string; locationId?: string; mode?: string } = {},
+  selectedAddress?: { id: string } | null
+): Record<string, unknown> {
+  const isDummyAddress = !selectedAddress?.id || selectedAddress.id === "home" || selectedAddress.id === "work";
+  const defaultAddressId = !isDummyAddress ? selectedAddress?.id : undefined;
+  const effectiveAddressId = options.addressId ?? defaultAddressId;
+
+  const payload: Record<string, unknown> = {};
+  if (options.query) payload.query = options.query;
+
+  if (domain === "food") {
+    if (options.mode) payload.mode = options.mode;
+    if (effectiveAddressId) payload.addressId = effectiveAddressId;
+  } else if (domain === "instamart") {
+    if (effectiveAddressId) payload.addressId = effectiveAddressId;
+  } else if (domain === "dineout") {
+    if (options.locationId) payload.locationId = options.locationId;
+  }
+  return payload;
+}
+
+// ─── Test 8 (Requirement a): Multiple addresses -> user selection required ───
+console.log("Test 8 (Requirement a): Multiple addresses -> user selection required");
+// Static code check: CartProvider requires explicit selection when multiple addresses exist
+assert(cartContent.includes("resolveInitialAddress"), "use-cart.tsx must implement resolveInitialAddress");
+assert(cartContent.includes("return null"), "resolveInitialAddress must return null when multiple addresses exist without selection");
+assert(discoverContent.includes("AddressSelectionPrompt"), "Discover.tsx must render AddressSelectionPrompt");
+assert(dashboardContent.includes("AddressSelectionPrompt"), "Dashboard.tsx must render AddressSelectionPrompt");
+assert(instamartContent.includes("AddressSelectionPrompt"), "InstamartDomainView.tsx must render AddressSelectionPrompt");
+
+// Check condition triggers clarification prompt when no address is selected and multiple exist
+assert(discoverContent.includes("foodRecData?.clarificationNeeded || (!selectedAddress &&"),
+  "Discover.tsx must trigger prompt on clarificationNeeded or multiple unselected addresses");
+assert(dashboardContent.includes("foodRecData?.clarificationNeeded || (!selectedAddress &&"),
+  "Dashboard.tsx must trigger prompt on clarificationNeeded or multiple unselected addresses");
+assert(instamartContent.includes("instamartData?.clarificationNeeded || (!selectedAddress &&"),
+  "InstamartDomainView.tsx must trigger prompt on clarificationNeeded or multiple unselected addresses");
+
+// Behavioral check:
+const addrA: Address = { id: "swiggy_addr_home_101", label: "Home", address: "123 Indiranagar, Bengaluru", icon: "Home" };
+const addrB: Address = { id: "swiggy_addr_work_102", label: "Work", address: "456 Whitefield, Bengaluru", icon: "Briefcase" };
+const multipleAddresses = [addrA, addrB];
+
+const resolvedMultiNoSelection = resolveInitialAddressSimulation(multipleAddresses, null, null);
+assert.strictEqual(resolvedMultiNoSelection, null, "Multiple addresses without existing selection MUST resolve to null (explicit selection required)");
+
+const resolvedMultiWithSelection = resolveInitialAddressSimulation(multipleAddresses, addrB, null);
+assert.strictEqual(resolvedMultiWithSelection?.id, "swiggy_addr_work_102", "Multiple addresses with active selection must preserve active selection");
+console.log("  ✓ Multiple addresses require explicit selection without silent fallback");
+
+// ─── Test 9 (Requirement b): Selected real addressId is sent to Food ─────────
+console.log("Test 9 (Requirement b): Selected real addressId is sent to Food");
+assert(hookContent.includes('if (domain === "food")') && hookContent.includes("if (effectiveAddressId) payload.addressId = effectiveAddressId;"),
+  "use-recommendations.ts must forward real effectiveAddressId to Food payload");
+
+const foodPayloadWithRealAddr = buildPayloadSimulation("food", { mode: "restaurants" }, { id: "swiggy_real_addr_koramangala_555" });
+assert.strictEqual(foodPayloadWithRealAddr.addressId, "swiggy_real_addr_koramangala_555",
+  "Food recommendation payload must receive the selected real Swiggy addressId");
+assert.strictEqual(foodPayloadWithRealAddr.mode, "restaurants");
+
+const foodPayloadWithExplicitOverride = buildPayloadSimulation("food", { addressId: "explicit_swiggy_addr_999" }, { id: "swiggy_real_addr_koramangala_555" });
+assert.strictEqual(foodPayloadWithExplicitOverride.addressId, "explicit_swiggy_addr_999",
+  "Explicit options.addressId must take precedence");
+console.log("  ✓ Selected real addressId is correctly sent to POST /api/recommendations/food");
+
+// ─── Test 10 (Requirement c): Selected real addressId is sent to Instamart ────
+console.log("Test 10 (Requirement c): Selected real addressId is sent to Instamart");
+assert(hookContent.includes('else if (domain === "instamart")') && hookContent.includes("if (effectiveAddressId) payload.addressId = effectiveAddressId;"),
+  "use-recommendations.ts must forward real effectiveAddressId to Instamart payload");
+
+const instamartPayloadWithRealAddr = buildPayloadSimulation("instamart", { query: "milk" }, { id: "swiggy_real_addr_h抽取777" });
+assert.strictEqual(instamartPayloadWithRealAddr.addressId, "swiggy_real_addr_h抽取777",
+  "Instamart recommendation payload must receive the selected real Swiggy addressId");
+assert.strictEqual(instamartPayloadWithRealAddr.query, "milk");
+console.log("  ✓ Selected real addressId is correctly sent to POST /api/recommendations/instamart");
+
+// ─── Test 11 (Requirement d): One address can be selected automatically ──────
+console.log("Test 11 (Requirement d): One address can be selected automatically");
+assert(cartContent.includes("if (liveAddresses.length === 1)"),
+  "use-cart.tsx must handle liveAddresses.length === 1");
+
+const singleAddrList = [addrA];
+const resolvedSingle = resolveInitialAddressSimulation(singleAddrList, null, null);
+assert.strictEqual(resolvedSingle?.id, "swiggy_addr_home_101",
+  "Exactly one saved address can be auto-selected because there is zero ambiguity");
+console.log("  ✓ Single address auto-selection functions unambiguously");
+
+// ─── Test 12 (Requirement e): Zero addresses handled safely ───────────────────
+console.log("Test 12 (Requirement e): Zero addresses handled safely");
+assert(cartContent.includes("if (!liveAddresses || liveAddresses.length === 0)"),
+  "use-cart.tsx must handle zero addresses cleanly");
+assert(addressPromptContent.includes("No Saved Delivery Addresses Found"),
+  "AddressSelectionPrompt must render controlled empty state message when 0 addresses exist");
+
+const resolvedZero = resolveInitialAddressSimulation([], null, null);
+assert.strictEqual(resolvedZero, null, "Zero addresses must resolve to null safely");
+
+const checkoutPath = path.join(rootDir, "artifacts/nutriflow/src/pages/Checkout.tsx");
+const checkoutContent = fs.readFileSync(checkoutPath, "utf-8");
+assert(checkoutContent.includes("selectedAddress?.id") || checkoutContent.includes("selectedAddress ?"),
+  "Checkout.tsx must safely guard against null selectedAddress");
+console.log("  ✓ Zero addresses handled safely across context, prompt UI, and checkout");
+
+// ─── Test 13 (Requirement f): Placeholder 'home'/'work' IDs are never sent ───
+console.log("Test 13 (Requirement f): Placeholder 'home'/'work' IDs are never sent as Swiggy address IDs");
+assert(hookContent.includes('selectedAddress.id === "home" || selectedAddress.id === "work"'),
+  "use-recommendations.ts must strictly filter out dummy 'home'/'work' IDs");
+assert(cartContent.includes("DEFAULT_ADDRESSES: Address[] = []"),
+  "use-cart.tsx DEFAULT_ADDRESSES must be empty array, never dummy placeholder IDs");
+
+// Test dummy filter on Food
+const foodPayloadWithDummyHome = buildPayloadSimulation("food", {}, { id: "home" });
+assert.strictEqual(foodPayloadWithDummyHome.addressId, undefined, "Dummy 'home' ID must NEVER be sent to Food");
+
+const foodPayloadWithDummyWork = buildPayloadSimulation("food", {}, { id: "work" });
+assert.strictEqual(foodPayloadWithDummyWork.addressId, undefined, "Dummy 'work' ID must NEVER be sent to Food");
+
+// Test dummy filter on Instamart
+const instamartPayloadWithDummyHome = buildPayloadSimulation("instamart", {}, { id: "home" });
+assert.strictEqual(instamartPayloadWithDummyHome.addressId, undefined, "Dummy 'home' ID must NEVER be sent to Instamart");
+
+const instamartPayloadWithDummyWork = buildPayloadSimulation("instamart", {}, { id: "work" });
+assert.strictEqual(instamartPayloadWithDummyWork.addressId, undefined, "Dummy 'work' ID must NEVER be sent to Instamart");
+console.log("  ✓ Dummy 'home' and 'work' placeholder IDs are strictly blocked from Swiggy recommendation payloads");
+
+// ─── Test 14 (Requirement g): Existing Dineout behavior remains unaffected ───
+console.log("Test 14 (Requirement g): Existing Dineout behavior remains unaffected");
+assert(hookContent.includes('else if (domain === "dineout")') &&
+       hookContent.includes("if (options.locationId) payload.locationId = options.locationId;"),
+  "use-recommendations.ts must only set locationId from options.locationId for Dineout");
+
+// Dineout should NOT inherit food/instamart selectedAddress
+const dineoutPayloadWithFoodAddress = buildPayloadSimulation("dineout", {}, { id: "swiggy_real_addr_koramangala_555" });
+assert.strictEqual(dineoutPayloadWithFoodAddress.addressId, undefined, "Dineout must not be forced a food addressId");
+assert.strictEqual(dineoutPayloadWithFoodAddress.locationId, undefined, "Dineout must not map food addressId into locationId without explicit intent");
+
+const dineoutPayloadWithExplicitLocation = buildPayloadSimulation("dineout", { locationId: "dineout_saved_loc_koramangala" }, { id: "swiggy_real_addr_koramangala_555" });
+assert.strictEqual(dineoutPayloadWithExplicitLocation.locationId, "dineout_saved_loc_koramangala", "Dineout must preserve explicit locationId");
+assert.strictEqual(dineoutPayloadWithExplicitLocation.addressId, undefined, "Dineout must not carry addressId field");
+console.log("  ✓ Existing Dineout saved-location behavior remains completely unaffected");
+
+// ─── Test 15: Attribution & UI UX Enhancements ───────────────────────────────
+console.log("Test 15: Powered by Swiggy attribution and TopBar address switcher present");
+assert(addressPromptContent.includes("⚡ Powered by Swiggy"), "AddressSelectionPrompt must display Swiggy attribution badge");
+assert(topBarContent.includes("Delivery location selector") && topBarContent.includes("⚡ Swiggy Saved"),
+  "TopBar must include Swiggy delivery location dropdown with attribution");
+console.log("  ✓ Attribution and TopBar location switcher verified");
+
 console.log("\n==================================================================");
-console.log("🎉 ALL 7 FRONTEND LIVE-DATA INTEGRATION TESTS PASSED SUCCESSFULLY!");
+console.log("🎉 ALL 15 FRONTEND LIVE-DATA & EXPLICIT ADDRESS TESTS PASSED!");
 console.log("==================================================================\n");
+

@@ -35,6 +35,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendations, type FoodRecommendationResponse } from "@/hooks/use-recommendations";
+import { AddressSelectionPrompt } from "@/components/address/AddressSelectionPrompt";
 import {
   useListRestaurants,
   useGetGroceryList,
@@ -43,7 +44,7 @@ import {
 export default function Dashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const { addToCart, setIsCartOpen } = useCart();
+  const { addToCart, setIsCartOpen, addresses, selectedAddress, setSelectedAddress } = useCart();
   const { toast } = useToast();
 
   // Live Swiggy Food personalized recommendations for Home Dashboard
@@ -565,6 +566,25 @@ export default function Dashboard() {
                     );
                   })}
                 </div>
+              ) : (foodRecData?.clarificationNeeded || (!selectedAddress && (foodRecData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
+                <AddressSelectionPrompt
+                  domain="food"
+                  availableAddresses={foodRecData?.availableAddresses || addresses}
+                  selectedAddressId={selectedAddress?.id}
+                  onSelectAddress={(addr) => setSelectedAddress(addr)}
+                />
+              ) : (addresses.length === 0 && (!foodRecData?.availableAddresses || foodRecData.availableAddresses.length === 0)) ? (
+                <AppCard className="p-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">
+                    <Utensils className="h-6 w-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-foreground">
+                    No Saved Delivery Address
+                  </h4>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                    Add a delivery address to your Swiggy account to discover nearby restaurants and receive live recommendations.
+                  </p>
+                </AppCard>
               ) : (
                 <AppCard className="p-8 text-center space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">

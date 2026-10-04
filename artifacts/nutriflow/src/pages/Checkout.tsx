@@ -282,7 +282,7 @@ export default function Checkout() {
                 <CardContent className="p-5 space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
                     {activeAddresses.map((addr) => {
-                      const isSelected = selectedAddress.id === addr.id;
+                      const isSelected = selectedAddress?.id === addr.id;
                       const emoji =
                         addr.icon === "Home" ? "🏠" : addr.icon === "Briefcase" ? "💼" : "📍";
                       return (
@@ -484,7 +484,7 @@ export default function Checkout() {
             </div>
             <div className="flex justify-between font-semibold">
               <span className="text-muted-foreground">Delivery To:</span>
-              <span className="text-foreground truncate max-w-[200px]">{selectedAddress.label} - {selectedAddress.address}</span>
+              <span className="text-foreground truncate max-w-[200px]">{selectedAddress ? `${selectedAddress.label} - ${selectedAddress.address}` : "Select Address"}</span>
             </div>
             <div className="flex justify-between font-semibold">
               <span className="text-muted-foreground">Item Subtotal:</span>

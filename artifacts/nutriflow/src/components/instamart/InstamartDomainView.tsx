@@ -23,6 +23,7 @@ import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendations, type InstamartRecommendationResponse } from "@/hooks/use-recommendations";
+import { AddressSelectionPrompt } from "@/components/address/AddressSelectionPrompt";
 import { MOCK_INSTAMART_GROCERIES } from "@/lib/mockData";
 import {
   InstamartProductCard,
@@ -48,7 +49,7 @@ export function InstamartDomainView() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"catalog" | "checklist">("catalog");
 
-  const { addToCart, setIsCartOpen, items: cartItems } = useCart();
+  const { addToCart, setIsCartOpen, items: cartItems, addresses, selectedAddress, setSelectedAddress } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -383,6 +384,13 @@ export function InstamartDomainView() {
                 <span>Retry</span>
               </SecondaryButton>
             </AppCard>
+          ) : (instamartData?.clarificationNeeded || (!selectedAddress && (instamartData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
+            <AddressSelectionPrompt
+              domain="instamart"
+              availableAddresses={instamartData?.availableAddresses || addresses}
+              selectedAddressId={selectedAddress?.id}
+              onSelectAddress={(addr) => setSelectedAddress(addr)}
+            />
           ) : filteredProducts.length === 0 ? (
             <AppCard className="p-8 sm:p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">

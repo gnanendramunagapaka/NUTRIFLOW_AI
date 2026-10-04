@@ -26,12 +26,11 @@ export interface Address {
   label: string;
   address: string;
   icon: string;
+  city?: string;
+  isDefault?: boolean;
 }
 
-export const DEFAULT_ADDRESSES: Address[] = [
-  { id: "home", label: "Home", address: "Flat 402, Block A, Green Meadows Apartments, HSR Layout, Bengaluru", icon: "Home" },
-  { id: "work", label: "Work", address: "7th Floor, Tower B, Prestige Tech Park, Marathahalli, Bengaluru", icon: "Briefcase" },
-];
+export const DEFAULT_ADDRESSES: Address[] = [];
 
 export function useSwiggyAddresses() {
   const { user } = useAuth();
@@ -41,7 +40,7 @@ export function useSwiggyAddresses() {
     queryFn: async () => {
       // Must have active NutriFlow Swiggy session
       if (!user) {
-        return DEFAULT_ADDRESSES;
+        return [];
       }
 
       const res = await fetch("/api/swiggy/mcp/get_addresses", {
@@ -54,26 +53,79 @@ export function useSwiggyAddresses() {
       });
 
       if (!res.ok) {
-        console.warn("Failed to fetch live Swiggy addresses. Falling back to default mock addresses.");
-        return DEFAULT_ADDRESSES;
+        console.warn("Failed to fetch live Swiggy addresses.");
+        return [];
       }
 
       const data = await res.json().catch(() => null);
-      const incoming = data?.addresses || [];
+      let incoming: any[] = [];
+      if (Array.isArray(data?.structuredContent?.addresses)) {
+        incoming = data.structuredContent.addresses;
+      } else if (Array.isArray(data?.result?.structuredContent?.addresses)) {
+        incoming = data.result.structuredContent.addresses;
+      } else if (Array.isArray(data?.result?.addresses)) {
+        incoming = data.result.addresses;
+      } else if (Array.isArray(data?.data?.addresses)) {
+        incoming = data.data.addresses;
+      } else if (Array.isArray(data?.addresses)) {
+        incoming = data.addresses;
+      } else if (Array.isArray(data)) {
+        incoming = data;
+      }
 
-      if (!Array.isArray(incoming) || incoming.length === 0) return DEFAULT_ADDRESSES;
+      if (!Array.isArray(incoming) || incoming.length === 0) return [];
 
-      // Normalize Swiggy address shape to our Address interface
-      const normalized: Address[] = incoming.map((a: any, idx: number) => ({
-        id: a.id ?? `addr_${idx}`,
-        label: a.name ?? a.label ?? (a.isDefault ? "Home" : `Address ${idx + 1}`),
-        address: a.address ?? a.description ?? `${a.city ?? ""} ${a.address ?? ""}`,
-        icon: a.icon ?? (a.isDefault ? "Home" : "MapPin"),
-      }));
+      // Normalize Swiggy address shape strictly preserving real Swiggy IDs
+      const normalized: Address[] = [];
+      for (let idx = 0; idx < incoming.length; idx++) {
+        const a = incoming[idx];
+        if (!a || typeof a !== "object") continue;
+        const rawId = a.id ?? a.address_id ?? a._id;
+        if (rawId == null) continue;
+        const id = String(rawId).trim();
+        if (!id) continue;
+
+        const label = String(
+          a.addressTag ??
+          a.addressCategory ??
+          a.label ??
+          a.name ??
+          (a.isDefault ? "Home" : `Address ${idx + 1}`)
+        ).trim();
+
+        const addressText = String(
+          a.addressLine ??
+          a.address_line ??
+          a.address ??
+          a.formatted_address ??
+          `${a.city ?? ""} ${a.address ?? ""}`
+        ).trim();
+
+        const isDefault = Boolean(
+          a.isDefault === true ||
+          a.is_default === true ||
+          a.default === true
+        );
+
+        const icon = label.toLowerCase().includes("work")
+          ? "Briefcase"
+          : label.toLowerCase().includes("home")
+          ? "Home"
+          : "MapPin";
+
+        normalized.push({
+          id,
+          label,
+          address: addressText,
+          icon,
+          city: typeof a.city === "string" ? a.city : undefined,
+          isDefault,
+        });
+      }
 
       return normalized;
     },
-    enabled: true,
+    enabled: Boolean(user),
     staleTime: 10 * 60 * 1000, 
   });
 }
@@ -98,8 +150,9 @@ interface CartContextType {
   isCartOpen: boolean;
   setIsCartOpen: (open: boolean) => void;
   addresses: Address[];
-  selectedAddress: Address;
-  setSelectedAddress: (address: Address) => void;
+  selectedAddress: Address | null;
+  setSelectedAddress: (address: Address | null) => void;
+  isLoadingAddresses: boolean;
   deliveryEstimate: string;
   deliveryFee: number;
   platformFee: number;
@@ -107,23 +160,86 @@ interface CartContextType {
   totalAmount: number;
 }
 
+/**
+ * Pure address resolution algorithm for NutriFlow explicit address selection.
+ * - Zero addresses -> null
+ * - Exactly 1 address -> auto-select (zero ambiguity)
+ * - Multiple addresses -> preserve existing valid selection or restore from session; otherwise null (explicit user selection required)
+ */
+export function resolveInitialAddress(
+  liveAddresses: Address[] | undefined | null,
+  currentSelected: Address | null,
+  savedId?: string | null
+): Address | null {
+  if (!liveAddresses || liveAddresses.length === 0) {
+    return null;
+  }
+
+  if (liveAddresses.length === 1) {
+    return liveAddresses[0];
+  }
+
+  // Multiple addresses:
+  // 1. If currently selected address exists in live addresses, keep it
+  if (currentSelected?.id) {
+    const matched = liveAddresses.find((a) => a.id === currentSelected.id);
+    if (matched) return matched;
+  }
+
+  // 2. If stored in session, restore it
+  if (savedId) {
+    const matched = liveAddresses.find((a) => a.id === savedId);
+    if (matched) return matched;
+  }
+
+  // 3. Otherwise: do NOT silently pick one; require explicit user selection
+  return null;
+}
+
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { data: liveAddresses } = useSwiggyAddresses();
-  const addresses = liveAddresses || DEFAULT_ADDRESSES;
+  const { data: liveAddresses, isLoading: isLoadingAddresses } = useSwiggyAddresses();
+  const addresses = liveAddresses ?? [];
   const [items, setItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
-  const [selectedAddress, setSelectedAddress] = useState<Address>(DEFAULT_ADDRESSES[0]);
+  const [selectedAddress, setSelectedAddressState] = useState<Address | null>(() => {
+    if (typeof window !== "undefined") {
+      const savedId = sessionStorage.getItem("nutriflow_selected_address_id");
+      if (savedId) {
+        return { id: savedId, label: "Saved Location", address: "", icon: "MapPin" };
+      }
+    }
+    return null;
+  });
+
+  const setSelectedAddress = (addr: Address | null) => {
+    setSelectedAddressState(addr);
+    if (typeof window !== "undefined") {
+      if (addr?.id) {
+        sessionStorage.setItem("nutriflow_selected_address_id", addr.id);
+      } else {
+        sessionStorage.removeItem("nutriflow_selected_address_id");
+      }
+    }
+  };
 
   useEffect(() => {
-    if (liveAddresses && liveAddresses.length > 0) {
-      setSelectedAddress((current) => {
-        const exists = liveAddresses.some((a) => a.id === current.id);
-        return exists ? current : liveAddresses[0];
-      });
+    if (!liveAddresses || liveAddresses.length === 0) {
+      setSelectedAddressState(null);
+      return;
     }
+
+    if (liveAddresses.length === 1) {
+      setSelectedAddress(liveAddresses[0]);
+      return;
+    }
+
+    setSelectedAddressState((current) => {
+      const savedId = typeof window !== "undefined" ? sessionStorage.getItem("nutriflow_selected_address_id") : null;
+      return resolveInitialAddress(liveAddresses, current, savedId);
+    });
   }, [liveAddresses]);
 
   const getCartKey = () => user ? `nutriflow_cart_${user.id}` : `nutriflow_cart_guest`;
@@ -410,6 +526,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         addresses,
         selectedAddress,
         setSelectedAddress,
+        isLoadingAddresses,
         deliveryEstimate,
         deliveryFee,
         platformFee,

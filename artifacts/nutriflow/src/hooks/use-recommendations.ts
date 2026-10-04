@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
-import { useCart } from "./use-cart";
+import { useCart, type Address } from "./use-cart";
 import { useAuth } from "./use-auth";
 import type { RankedRecommendationCandidate, ExcludedRecommendationCandidate } from "@/lib/recommendationRanking";
 
@@ -127,20 +127,20 @@ async function fetchRecommendations<T = AnyRecommendationResponse>(
 }
 
 /**
- * Universal React Query hook for live Swiggy recommendations (Food, Instamart, Dineout).
- * Automatically forwards the active delivery address from useCart().
- * Strictly uses credentials: "include" for authenticated session cookies.
+ * Pure recommendation request payload builder.
+ * - Resolves effective address ID from explicit options or selectedAddress.
+ * - Strictly rejects dummy/placeholder IDs ("home", "work").
+ * - Isolates Dineout so food/instamart address IDs are never forced into Dineout.
  */
-export function useRecommendations<T = AnyRecommendationResponse>(
+export function buildRecommendationPayload(
   domain: RecommendationDomain,
-  options: UseRecommendationsOptions = {}
-): UseQueryResult<T, Error> {
-  const { selectedAddress } = useCart();
-  const { user } = useAuth();
-
-  // Use selectedAddress.id as default if available and not a placeholder/mock ID ("home"/"work")
+  options: UseRecommendationsOptions = {},
+  selectedAddress?: Address | null
+): Record<string, unknown> {
+  // Determine effective real address ID
+  // Placeholder IDs ("home", "work") must NEVER be sent as Swiggy address IDs
   const isDummyAddress = !selectedAddress?.id || selectedAddress.id === "home" || selectedAddress.id === "work";
-  const defaultAddressId = !isDummyAddress ? selectedAddress.id : undefined;
+  const defaultAddressId = !isDummyAddress ? selectedAddress?.id : undefined;
   const effectiveAddressId = options.addressId ?? defaultAddressId;
 
   // Build the request payload according to domain contract
@@ -157,9 +157,26 @@ export function useRecommendations<T = AnyRecommendationResponse>(
     if (effectiveAddressId) payload.addressId = effectiveAddressId;
   } else if (domain === "dineout") {
     // Dineout accepts locationId which maps to Swiggy addressId/locationId
-    const effectiveLocationId = options.locationId ?? effectiveAddressId;
-    if (effectiveLocationId) payload.locationId = effectiveLocationId;
+    // Do NOT force food/instamart effectiveAddressId into Dineout
+    if (options.locationId) payload.locationId = options.locationId;
   }
+
+  return payload;
+}
+
+/**
+ * Universal React Query hook for live Swiggy recommendations (Food, Instamart, Dineout).
+ * Automatically forwards the active delivery address from useCart().
+ * Strictly uses credentials: "include" for authenticated session cookies.
+ */
+export function useRecommendations<T = AnyRecommendationResponse>(
+  domain: RecommendationDomain,
+  options: UseRecommendationsOptions = {}
+): UseQueryResult<T, Error> {
+  const { selectedAddress } = useCart();
+  const { user } = useAuth();
+
+  const payload = buildRecommendationPayload(domain, options, selectedAddress);
 
   const isEnabled = options.enabled !== false && Boolean(user);
 

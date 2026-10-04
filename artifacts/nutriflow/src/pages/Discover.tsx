@@ -17,6 +17,7 @@ import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendations, type FoodRecommendationResponse } from "@/hooks/use-recommendations";
+import { AddressSelectionPrompt } from "@/components/address/AddressSelectionPrompt";
 
 import { ExploreDomainTabs } from "@/components/food/ExploreDomainTabs";
 import { RestaurantCard, RestaurantItemData } from "@/components/food/RestaurantCard";
@@ -76,7 +77,7 @@ export default function Discover() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<RestaurantItemData | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  const { addToCart, setIsCartOpen } = useCart();
+  const { addToCart, setIsCartOpen, addresses, selectedAddress, setSelectedAddress } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -400,6 +401,13 @@ export default function Discover() {
               </div>
             </div>
           </div>
+        ) : (foodRecData?.clarificationNeeded || (!selectedAddress && (foodRecData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
+          <AddressSelectionPrompt
+            domain="food"
+            availableAddresses={foodRecData?.availableAddresses || addresses}
+            selectedAddressId={selectedAddress?.id}
+            onSelectAddress={(addr) => setSelectedAddress(addr)}
+          />
         ) : !hasAnyResults ? (
           /* ─── 6. Empty State ─── */
           <AppCard className="p-8 sm:p-12 text-center space-y-4">
