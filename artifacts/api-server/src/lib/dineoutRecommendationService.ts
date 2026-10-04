@@ -111,7 +111,7 @@ export async function executeDineoutRecommendation(
       "restaurants";
 
     const targetAddressId = selectedLocation.addressId || selectedLocation.id;
-    const rawRestaurants: RawSwiggyDineoutRestaurant[] = await mcpClient.searchRestaurantsDineout(
+    let rawRestaurants: RawSwiggyDineoutRestaurant[] = await mcpClient.searchRestaurantsDineout(
       userToken,
       {
         query: explicitQuery,
@@ -123,6 +123,26 @@ export async function executeDineoutRecommendation(
         lng: selectedLocation.lng,
       }
     );
+
+    // Zero-result live fallback: broaden retrieval if primary intent yields zero candidates
+    if (rawRestaurants.length === 0 && explicitQuery !== "restaurants" && explicitQuery !== "dining") {
+      try {
+        rawRestaurants = await mcpClient.searchRestaurantsDineout(
+          userToken,
+          {
+            query: "restaurants",
+            addressId: targetAddressId,
+            address_id: targetAddressId,
+            location_id: selectedLocation.id,
+            locationId: selectedLocation.id,
+            lat: selectedLocation.lat,
+            lng: selectedLocation.lng,
+          }
+        );
+      } catch {
+        // Graceful fallback
+      }
+    }
 
     const candidates = normalizeDineoutRestaurantsBatch(rawRestaurants);
 

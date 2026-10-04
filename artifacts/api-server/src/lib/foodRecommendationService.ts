@@ -4,6 +4,8 @@ import {
   resolveSwiggyAddress,
   normalizeFoodRestaurantsBatch,
   normalizeFoodMenuItemsBatch,
+  type ProfileContext,
+  type CurrentRequestContext,
 } from "@workspace/api-zod";
 import { buildProfileContextFromProfile } from "./profileContext";
 import { executeSharedRecommendation } from "./recommendationService";
@@ -25,6 +27,36 @@ export interface ExecuteFoodRecommendationOptions {
 export interface FoodFlowResult {
   status: number;
   data: FoodRecommendationResponse | { error: string; requires_reauth?: boolean; details?: any };
+}
+
+/**
+ * Determines discovery retrieval intent for food when user has not searched or filtered.
+ * Uses persistent Profile Context (cuisine preferences, liked foods, health goal, dietary pattern).
+ */
+export function determineFoodDiscoveryIntent(
+  profileContext: ProfileContext,
+  currentRequest?: CurrentRequestContext
+): string {
+  if (currentRequest?.craving?.trim()) {
+    return currentRequest.craving.trim();
+  }
+  if (profileContext.dietary.cuisinePreferences?.[0]?.trim()) {
+    return profileContext.dietary.cuisinePreferences[0].trim();
+  }
+  if (profileContext.dietary.likedFoods?.[0]?.trim()) {
+    return profileContext.dietary.likedFoods[0].trim();
+  }
+  const goal = profileContext.goals.primaryGoal?.toLowerCase() || "";
+  if (goal.includes("muscle") || goal.includes("protein") || goal.includes("strength")) {
+    return "high protein";
+  }
+  if (goal.includes("weight") || goal.includes("loss") || goal.includes("cut")) {
+    return "healthy";
+  }
+  if (profileContext.dietary.dietaryPattern?.toLowerCase() === "vegetarian") {
+    return "pure veg";
+  }
+  return "healthy food";
 }
 
 /**
@@ -144,14 +176,39 @@ export async function executeFoodRecommendation(
         request.query?.trim() ||
         normalizedCurrentRequest?.craving ||
         profileContext.dietary.cuisinePreferences?.[0] ||
-        "";
+        determineFoodDiscoveryIntent(profileContext, normalizedCurrentRequest);
 
-      const rawRestaurants = await mcpClient.searchRestaurants(userToken, {
-        query: explicitQuery || undefined,
+      let rawRestaurants = await mcpClient.searchRestaurants(userToken, {
+        query: explicitQuery,
         address_id: selectedAddress.id,
         lat: selectedAddress.lat,
         lng: selectedAddress.lng,
       });
+
+      // Zero-result live fallback: broaden retrieval if primary intent returns 0 candidates
+      if (rawRestaurants.length === 0) {
+        const fallbackQueries = [
+          profileContext.dietary.dietaryPattern?.toLowerCase() === "vegetarian" ? "pure veg" : "healthy food",
+          "restaurants",
+        ];
+        for (const fq of fallbackQueries) {
+          if (fq === explicitQuery) continue;
+          try {
+            const fallbackRaw = await mcpClient.searchRestaurants(userToken, {
+              query: fq,
+              address_id: selectedAddress.id,
+              lat: selectedAddress.lat,
+              lng: selectedAddress.lng,
+            });
+            if (fallbackRaw && fallbackRaw.length > 0) {
+              rawRestaurants = fallbackRaw;
+              break;
+            }
+          } catch {
+            // Keep going or fail gracefully
+          }
+        }
+      }
 
       candidates = normalizeFoodRestaurantsBatch(rawRestaurants);
     }

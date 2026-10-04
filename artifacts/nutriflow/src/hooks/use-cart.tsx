@@ -160,7 +160,7 @@ export function extractFrontendSwiggyAddresses(data: unknown): Address[] {
       a.is_default === 1 ||
       a.default === 1
     );
-    const isEnvelopeDefault = !needsClarification && defaultAddressId ? id === defaultAddressId : false;
+    const isEnvelopeDefault = Boolean(defaultAddressId && id === defaultAddressId);
     const isDefault = isExplicitDefault || isEnvelopeDefault;
 
     normalized.push({
@@ -255,12 +255,15 @@ interface CartContextType {
  * Pure address resolution algorithm for NutriFlow explicit address selection.
  * - Zero addresses -> null
  * - Exactly 1 address -> auto-select (zero ambiguity)
- * - Multiple addresses -> preserve existing valid selection or restore from session; otherwise null (explicit user selection required)
+ * - If defaultAddressId provided by Swiggy exists in live addresses -> auto-select
+ * - If any address is marked isDefault -> auto-select
+ * - Multiple addresses -> preserve existing valid selection or restore from session; otherwise null (explicit user selection required on Home)
  */
 export function resolveInitialAddress(
   liveAddresses: Address[] | undefined | null,
   currentSelected: Address | null,
-  savedId?: string | null
+  savedId?: string | null,
+  defaultAddressId?: string | null
 ): Address | null {
   if (!liveAddresses || liveAddresses.length === 0) {
     return null;
@@ -286,7 +289,22 @@ export function resolveInitialAddress(
     }
   }
 
-  // 3. Otherwise: do NOT silently pick one; require explicit user selection
+  // 3. If Swiggy provides defaultAddressId and that ID exists in the returned address list: auto-select it
+  if (defaultAddressId) {
+    const isDummy = defaultAddressId.toLowerCase() === "home" || defaultAddressId.toLowerCase() === "work" || defaultAddressId.toLowerCase() === "mock";
+    if (!isDummy) {
+      const matched = liveAddresses.find((a) => a.id === defaultAddressId);
+      if (matched) return matched;
+    }
+  }
+
+  // 4. If any address is marked isDefault by Swiggy: auto-select it
+  const defaultAddr = liveAddresses.find((a) => a.isDefault);
+  if (defaultAddr) {
+    return defaultAddr;
+  }
+
+  // 5. Otherwise: do NOT silently pick an arbitrary address; require explicit user selection on Home
   return null;
 }
 
@@ -334,7 +352,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
     setSelectedAddressState((current) => {
       const savedId = typeof window !== "undefined" ? sessionStorage.getItem("nutriflow_selected_address_id") : null;
-      return resolveInitialAddress(liveAddresses, current, savedId);
+      const defaultAddr = liveAddresses.find((a) => a.isDefault);
+      const initial = resolveInitialAddress(liveAddresses, current, savedId, defaultAddr?.id);
+      if (initial?.id && typeof window !== "undefined" && !sessionStorage.getItem("nutriflow_selected_address_id")) {
+        sessionStorage.setItem("nutriflow_selected_address_id", initial.id);
+      }
+      return initial;
     });
   }, [liveAddresses]);
 

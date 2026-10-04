@@ -17,14 +17,15 @@ import {
   RefreshCw,
   ListChecks,
   Sparkles,
+  MapPin,
+  Home,
 } from "lucide-react";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendations, type InstamartRecommendationResponse } from "@/hooks/use-recommendations";
-import { AddressSelectionPrompt } from "@/components/address/AddressSelectionPrompt";
-import { MOCK_INSTAMART_GROCERIES } from "@/lib/mockData";
 import {
   InstamartProductCard,
   InstamartProductData,
@@ -49,7 +50,7 @@ export function InstamartDomainView() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"catalog" | "checklist">("catalog");
 
-  const { addToCart, setIsCartOpen, items: cartItems, addresses, selectedAddress, setSelectedAddress } = useCart();
+  const { addToCart, setIsCartOpen, items: cartItems, selectedAddress } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -67,7 +68,7 @@ export function InstamartDomainView() {
     refetch: refetchCatalog,
   } = useRecommendations<InstamartRecommendationResponse>("instamart", {
     query: effectiveQuery,
-    enabled: activeTab === "catalog",
+    enabled: activeTab === "catalog" && Boolean(selectedAddress?.id),
   });
 
   // Load database grocery checklist
@@ -153,46 +154,18 @@ export function InstamartDomainView() {
     });
   }, [instamartData]);
 
-  const isNoSavedAddress =
-    (!selectedAddress && addresses.length === 0) ||
-    Boolean(catalogError?.message?.includes("No saved delivery addresses"));
-
-  const isClarificationNeeded =
-    Boolean(instamartData?.clarificationNeeded) ||
-    (!selectedAddress && (instamartData?.availableAddresses?.length ?? addresses.length) > 1);
-
-  // If live API strictly fails with network/server error (and not zero-address/clarification flow), allow fallback to MOCK_INSTAMART_GROCERIES
-  const isUsingFallback = Boolean(
-    catalogError &&
-    !isNoSavedAddress &&
-    !isClarificationNeeded &&
-    (!instamartData || !instamartData.recommendations)
-  );
-  const filteredProducts = isUsingFallback
-    ? MOCK_INSTAMART_GROCERIES.map((p) => ({
-        id: p.id,
-        name: p.name,
-        category: p.category,
-        quantity: p.quantity,
-        unit: p.unit,
-        price: p.price,
-        discountPrice: p.discountPrice,
-        discountText: p.discountText,
-        inStock: p.inStock,
-        imageUrl: p.imageUrl,
-        deliveryTime: p.deliveryTime || undefined,
-        description: p.nutritionNote || "Fresh grocery item delivered via Swiggy Instamart",
-      })).filter((p) => {
-        const matchesCategory =
-          activeCategory === "all" ||
-          p.category.toLowerCase().includes(activeCategory.toLowerCase());
-        const matchesSearch =
-          !search ||
-          p.name.toLowerCase().includes(search.toLowerCase()) ||
-          p.category.toLowerCase().includes(search.toLowerCase());
-        return matchesCategory && matchesSearch;
-      })
-    : liveProducts;
+  const filteredProducts = useMemo(() => {
+    return liveProducts.filter((p) => {
+      const matchesCategory =
+        activeCategory === "all" ||
+        p.category.toLowerCase().includes(activeCategory.toLowerCase());
+      const matchesSearch =
+        !search ||
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.category.toLowerCase().includes(search.toLowerCase());
+      return matchesCategory && matchesSearch;
+    });
+  }, [liveProducts, activeCategory, search]);
 
   const handleAddToCart = (product: InstamartProductData) => {
     addToCart({
@@ -370,7 +343,25 @@ export function InstamartDomainView() {
           </div>
 
           {/* Catalog State / Products */}
-          {loadingCatalog ? (
+          {!selectedAddress ? (
+            <AppCard className="p-8 sm:p-12 text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
+                <MapPin className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-foreground">No Delivery Address Selected</h3>
+                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                  Please select your delivery address on the Home page to get personalized live Instamart grocery recommendations.
+                </p>
+              </div>
+              <Link href="/">
+                <SecondaryButton size="sm" className="text-xs gap-1.5 mt-2">
+                  <Home className="h-3.5 w-3.5" />
+                  <span>Go to Home</span>
+                </SecondaryButton>
+              </Link>
+            </AppCard>
+          ) : loadingCatalog ? (
             <div className="space-y-4">
               <Skeleton className="h-5 w-48 rounded-lg" />
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -379,20 +370,7 @@ export function InstamartDomainView() {
                 ))}
               </div>
             </div>
-          ) : isNoSavedAddress ? (
-            <AddressSelectionPrompt
-              domain="instamart"
-              availableAddresses={[]}
-              onSelectAddress={(addr) => setSelectedAddress(addr)}
-            />
-          ) : isClarificationNeeded ? (
-            <AddressSelectionPrompt
-              domain="instamart"
-              availableAddresses={instamartData?.availableAddresses || addresses}
-              selectedAddressId={selectedAddress?.id}
-              onSelectAddress={(addr) => setSelectedAddress(addr)}
-            />
-          ) : catalogError && !isUsingFallback ? (
+          ) : catalogError ? (
             <AppCard className="p-8 sm:p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
                 <ShoppingBag className="h-6 w-6" />

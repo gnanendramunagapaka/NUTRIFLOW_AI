@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import {
   SectionHeader,
   AppCard,
@@ -6,8 +7,10 @@ import {
 } from "@/components/layout/primitives";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, X, UtensilsCrossed, RefreshCw } from "lucide-react";
+import { Search, X, UtensilsCrossed, RefreshCw, MapPin, MapPinOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useCart } from "@/hooks/use-cart";
+import { useDineoutLocation } from "@/hooks/use-dineout-location";
 import { useRecommendations, type DineoutRecommendationResponse } from "@/hooks/use-recommendations";
 import {
   DineoutRestaurantCard,
@@ -31,18 +34,25 @@ export function DineoutDomainView() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<DineoutRestaurantData | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
+  const { selectedAddress } = useCart();
+  const { resolvedLocation, isLoadingLocation, isUnavailable } = useDineoutLocation(selectedAddress);
+
   // Effective query combining search input and category shortcut
   const effectiveQuery = search.trim() || (activeCategory !== "all" ? activeCategory : undefined);
 
   // Live Swiggy Dineout recommendations
   const {
     data: dineoutData,
-    isLoading,
+    isLoading: isLoadingRecommendations,
     error: dineoutError,
     refetch,
   } = useRecommendations<DineoutRecommendationResponse>("dineout", {
     query: effectiveQuery,
+    locationId: resolvedLocation?.id,
+    enabled: Boolean(resolvedLocation?.id),
   });
+
+  const isLoading = isLoadingLocation || (Boolean(resolvedLocation?.id) && isLoadingRecommendations);
 
   // Map Live Dineout Recommendations to DineoutRestaurantData preserving only real backend fields
   const filteredRestaurants: DineoutRestaurantData[] = useMemo(() => {
@@ -121,7 +131,33 @@ export function DineoutDomainView() {
       </div>
 
       {/* ─── Restaurant Results Grid / Loading / Error / Empty States ─── */}
-      {dineoutError ? (
+      {!selectedAddress ? (
+        <AppCard className="p-8 sm:p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+            <MapPin className="h-6 w-6" />
+          </div>
+          <h3 className="text-sm font-bold text-foreground">Select Location on Home</h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            Please select your location on the Home page to discover partner dining destinations nearby.
+          </p>
+          <Link href="/">
+            <SecondaryButton size="sm">Go to Home to Select Location</SecondaryButton>
+          </Link>
+        </AppCard>
+      ) : isUnavailable ? (
+        <AppCard className="p-8 sm:p-12 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+            <MapPinOff className="h-6 w-6" />
+          </div>
+          <h3 className="text-sm font-bold text-foreground">Dineout Not Available For This Location</h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+            Dineout restaurant discovery is currently unavailable for your selected Home address "{selectedAddress.label}". Please select another delivery address on Home.
+          </p>
+          <Link href="/">
+            <SecondaryButton size="sm">Go to Home to Change Address</SecondaryButton>
+          </Link>
+        </AppCard>
+      ) : dineoutError ? (
         <AppCard className="p-8 sm:p-12 text-center space-y-3">
           <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
             <UtensilsCrossed className="h-6 w-6" />

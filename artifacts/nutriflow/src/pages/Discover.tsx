@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import {
   PageContainer,
@@ -11,13 +11,12 @@ import {
 } from "@/components/layout/primitives";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, X, Utensils, Store, Compass, RefreshCw } from "lucide-react";
+import { Search, X, Utensils, Store, Compass, RefreshCw, MapPin, Home } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendations, type FoodRecommendationResponse } from "@/hooks/use-recommendations";
-import { AddressSelectionPrompt } from "@/components/address/AddressSelectionPrompt";
 
 import { ExploreDomainTabs } from "@/components/food/ExploreDomainTabs";
 import { RestaurantCard, RestaurantItemData } from "@/components/food/RestaurantCard";
@@ -77,7 +76,7 @@ export default function Discover() {
   const [selectedRestaurant, setSelectedRestaurant] = useState<RestaurantItemData | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
 
-  const { addToCart, setIsCartOpen, addresses, selectedAddress, setSelectedAddress } = useCart();
+  const { addToCart, setIsCartOpen, selectedAddress } = useCart();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -95,7 +94,7 @@ export default function Discover() {
   } = useRecommendations<FoodRecommendationResponse>("food", {
     query: effectiveQuery,
     mode: "restaurants",
-    enabled: activeDomain === "food",
+    enabled: activeDomain === "food" && Boolean(selectedAddress?.id),
   });
 
   // Live Swiggy Food Menu Recommendations for selected restaurant sheet
@@ -370,19 +369,24 @@ export default function Discover() {
           </div>
 
         {/* ─── 5. Loading / Error / Empty State ─── */}
-        {(!selectedAddress && addresses.length === 0) || Boolean(foodRecError?.message?.includes("No saved delivery addresses")) ? (
-          <AddressSelectionPrompt
-            domain="food"
-            availableAddresses={[]}
-            onSelectAddress={(addr) => setSelectedAddress(addr)}
-          />
-        ) : (foodRecData?.clarificationNeeded || (!selectedAddress && (foodRecData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
-          <AddressSelectionPrompt
-            domain="food"
-            availableAddresses={foodRecData?.availableAddresses || addresses}
-            selectedAddressId={selectedAddress?.id}
-            onSelectAddress={(addr) => setSelectedAddress(addr)}
-          />
+        {!selectedAddress ? (
+          <AppCard className="p-8 sm:p-12 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
+              <MapPin className="h-6 w-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-foreground">No Delivery Address Selected</h3>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Please select your delivery address on the Home page to get personalized live food recommendations.
+              </p>
+            </div>
+            <Link href="/">
+              <SecondaryButton size="sm" className="text-xs gap-1.5 mt-2">
+                <Home className="h-3.5 w-3.5" />
+                <span>Go to Home</span>
+              </SecondaryButton>
+            </Link>
+          </AppCard>
         ) : foodRecError ? (
           <AppCard className="p-8 sm:p-12 text-center space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">

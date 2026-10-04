@@ -4,6 +4,8 @@ import {
   resolveSwiggyAddress,
   normalizeInstamartProductsBatch,
   type RawSwiggyInstamartProduct,
+  type ProfileContext,
+  type CurrentRequestContext,
 } from "@workspace/api-zod";
 import { buildProfileContextFromProfile } from "./profileContext";
 import { executeSharedRecommendation } from "./recommendationService";
@@ -25,6 +27,33 @@ export interface ExecuteInstamartRecommendationOptions {
 export interface InstamartFlowResult {
   status: number;
   data: InstamartRecommendationResponse | { error: string; requires_reauth?: boolean; details?: any };
+}
+
+/**
+ * Determines discovery retrieval intent for Instamart when user has not searched or filtered.
+ * Uses persistent Profile Context (liked foods, health goal, dietary pattern).
+ */
+export function determineInstamartDiscoveryIntent(
+  profileContext: ProfileContext,
+  currentRequest?: CurrentRequestContext
+): string {
+  if (currentRequest?.craving?.trim()) {
+    return currentRequest.craving.trim();
+  }
+  if (profileContext.dietary.likedFoods?.[0]?.trim()) {
+    return profileContext.dietary.likedFoods[0].trim();
+  }
+  const goal = profileContext.goals.primaryGoal?.toLowerCase() || "";
+  if (goal.includes("muscle") || goal.includes("protein")) {
+    return "protein";
+  }
+  if (goal.includes("weight") || goal.includes("loss")) {
+    return "fruits";
+  }
+  if (profileContext.dietary.dietaryPattern?.toLowerCase() === "vegetarian") {
+    return "organic";
+  }
+  return "groceries";
 }
 
 /**
@@ -115,8 +144,23 @@ export async function executeInstamartRecommendation(
         lat: selectedAddress.lat,
         lng: selectedAddress.lng,
       });
+
+      // Zero-result live fallback for search: broaden to general live groceries if narrow search returned 0
+      if (rawProducts.length === 0 && explicitQuery !== "groceries" && explicitQuery !== "essentials") {
+        try {
+          rawProducts = await mcpClient.searchProducts(userToken, {
+            query: "groceries",
+            address_id: selectedAddress.id,
+            addressId: selectedAddress.id,
+            lat: selectedAddress.lat,
+            lng: selectedAddress.lng,
+          });
+        } catch {
+          // Graceful fallback
+        }
+      }
     } else {
-      // If no explicit query provided, try yourGoToItems first, fallback to general search
+      // If no explicit query provided, try yourGoToItems first, fallback to Profile Context discovery query
       try {
         rawProducts = await mcpClient.yourGoToItems(userToken, {
           address_id: selectedAddress.id,
@@ -127,13 +171,33 @@ export async function executeInstamartRecommendation(
       }
 
       if (rawProducts.length === 0) {
-        rawProducts = await mcpClient.searchProducts(userToken, {
-          query: "groceries",
-          address_id: selectedAddress.id,
-          addressId: selectedAddress.id,
-          lat: selectedAddress.lat,
-          lng: selectedAddress.lng,
-        });
+        const discoveryQuery = determineInstamartDiscoveryIntent(profileContext, normalizedCurrentRequest);
+        try {
+          rawProducts = await mcpClient.searchProducts(userToken, {
+            query: discoveryQuery,
+            address_id: selectedAddress.id,
+            addressId: selectedAddress.id,
+            lat: selectedAddress.lat,
+            lng: selectedAddress.lng,
+          });
+        } catch {
+          // Graceful fallback
+        }
+      }
+
+      // If discovery query still returned 0, broaden to common live groceries
+      if (rawProducts.length === 0) {
+        try {
+          rawProducts = await mcpClient.searchProducts(userToken, {
+            query: "groceries",
+            address_id: selectedAddress.id,
+            addressId: selectedAddress.id,
+            lat: selectedAddress.lat,
+            lng: selectedAddress.lng,
+          });
+        } catch {
+          // Graceful fallback
+        }
       }
     }
 

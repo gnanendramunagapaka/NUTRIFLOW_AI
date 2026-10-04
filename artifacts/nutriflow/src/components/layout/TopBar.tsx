@@ -33,7 +33,7 @@ interface TopBarProps {
 export function TopBar({ title, className }: TopBarProps) {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
-  const { itemCount, setIsCartOpen, addresses, selectedAddress, setSelectedAddress } = useCart();
+  const { itemCount, setIsCartOpen, selectedAddress } = useCart();
 
   // Desktop navigation items (canonical 4 destinations)
   const navItems = [
@@ -118,73 +118,24 @@ export function TopBar({ title, className }: TopBarProps) {
 
         {/* Right: Actions (Address Selector, Cart & Avatar/Login) */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Swiggy Delivery Location Dropdown */}
+          {/* Swiggy Delivery Location Display (Read-Only context indicator, NOT an address selector) */}
           {user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-border/70 hover:border-primary/40 bg-card hover:bg-muted/50 transition-colors text-left max-w-[150px] sm:max-w-[210px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer shadow-2xs"
-                  aria-label="Delivery location selector"
-                >
-                  <MapPin className="h-3.5 w-3.5 text-[#FC8019] shrink-0" />
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-[11px] font-bold text-foreground truncate leading-tight flex items-center gap-1">
-                      {selectedAddress ? selectedAddress.label : addresses.length > 0 ? "Select Address" : "No Address"}
-                      <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-                    </span>
-                    {selectedAddress && (
-                      <span className="text-[9px] text-muted-foreground truncate hidden sm:inline-block leading-tight">
-                        {selectedAddress.address}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-72 sm:w-80 p-2 space-y-1">
-                <DropdownMenuLabel className="text-xs font-bold flex items-center justify-between pb-1">
-                  <span>Delivery Location</span>
-                  <span className="text-[9px] text-orange-600 dark:text-orange-400 font-semibold bg-orange-500/10 px-1.5 py-0.5 rounded">
-                    ⚡ Swiggy Saved
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-border/70 bg-card/60 text-left max-w-[150px] sm:max-w-[210px] shadow-2xs select-none"
+              aria-label="Active delivery location"
+            >
+              <MapPin className="h-3.5 w-3.5 text-[#FC8019] shrink-0" />
+              <div className="flex flex-col min-w-0">
+                <span className="text-[11px] font-bold text-foreground truncate leading-tight">
+                  {selectedAddress ? selectedAddress.label : "No Address Selected"}
+                </span>
+                {selectedAddress && (
+                  <span className="text-[9px] text-muted-foreground truncate hidden sm:inline-block leading-tight">
+                    {selectedAddress.address}
                   </span>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {addresses.length === 0 ? (
-                  <div className="p-3 text-center text-xs text-muted-foreground">
-                    No saved addresses found on your Swiggy account.
-                  </div>
-                ) : (
-                  addresses.map((addr) => {
-                    const isSelected = selectedAddress?.id === addr.id;
-                    return (
-                      <DropdownMenuItem
-                        key={addr.id}
-                        onClick={() => setSelectedAddress(addr)}
-                        className={cn(
-                          "flex items-start gap-2.5 p-2 rounded-xl cursor-pointer text-left",
-                          isSelected && "bg-primary/10 text-primary font-semibold"
-                        )}
-                      >
-                        <span className="text-sm mt-0.5">
-                          {addr.icon === "Home" ? "🏠" : addr.icon === "Briefcase" ? "💼" : "📍"}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-foreground">
-                              {addr.label}
-                            </span>
-                            {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
-                            {addr.address}
-                          </p>
-                        </div>
-                      </DropdownMenuItem>
-                    );
-                  })
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              </div>
+            </div>
           )}
 
           {/* Cart Drawer Trigger */}
