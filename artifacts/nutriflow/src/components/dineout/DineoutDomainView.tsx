@@ -188,7 +188,9 @@ export function DineoutDomainView() {
           </div>
           <h3 className="text-sm font-bold text-foreground">No Dineout restaurants found</h3>
           <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-            Try adjusting your search query or reset the category filters to explore more dining destinations.
+            {search.trim() || activeCategory !== "all"
+              ? "No partner restaurants matched your search criteria. Try adjusting your query or resetting filters."
+              : "No participating Dineout dining venues were found for your selected address. Dineout reservations depend on partner restaurant availability in your city."}
           </p>
           <SecondaryButton
             size="sm"

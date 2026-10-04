@@ -35,6 +35,7 @@ export const RecommendationCandidateItemSchema = z.object({
   mealOccasions: z.array(z.string()).optional(),
   categoryTags: z.array(z.string()).optional(),
   matchableAttributes: z.record(z.string(), z.array(z.string())).optional(),
+  sourceMetadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type RecommendationCandidateItem = z.infer<typeof RecommendationCandidateItemSchema>;

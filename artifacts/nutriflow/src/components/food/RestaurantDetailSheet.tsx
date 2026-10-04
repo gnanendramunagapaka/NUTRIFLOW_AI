@@ -136,7 +136,9 @@ export function RestaurantDetailSheet({
             <SheetTitle className="text-lg sm:text-xl font-extrabold text-white leading-tight">
               {restaurant.name}
             </SheetTitle>
-            <p className="text-xs text-white/80">{restaurant.cuisine}</p>
+            {restaurant.cuisine ? (
+              <p className="text-xs text-white/80">{restaurant.cuisine}</p>
+            ) : null}
           </div>
         </div>
 
@@ -254,9 +256,11 @@ export function RestaurantDetailSheet({
                         </h5>
                       </div>
 
-                      <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 block">
-                        ₹{item.price}
-                      </span>
+                      {item.price > 0 && (
+                        <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 block">
+                          ₹{item.price}
+                        </span>
+                      )}
 
                       {item.description && (
                         <p className="text-[11px] text-muted-foreground line-clamp-2 leading-relaxed">
@@ -281,34 +285,51 @@ export function RestaurantDetailSheet({
                       )}
                     </div>
 
-                    {/* Add Button */}
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAddItem(item);
-                      }}
-                      disabled={isAdded}
-                      className={cn(
-                        "h-8 px-3 text-xs font-semibold rounded-xl shrink-0 gap-1",
-                        isAdded
-                          ? "bg-muted text-muted-foreground"
-                          : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                    {/* Image & Add Button container */}
+                    <div className="flex flex-col items-center gap-2 shrink-0">
+                      {item.imageUrl && (
+                        <div
+                          onClick={() => setSelectedItemForDetail(item)}
+                          className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-muted border border-border/60 cursor-pointer"
+                        >
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </div>
                       )}
-                    >
-                      {isAdded ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          <span>Added</span>
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="h-3 w-3" />
-                          <span>Add</span>
-                        </>
-                      )}
-                    </Button>
+
+                      {/* Add Button */}
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAddItem(item);
+                        }}
+                        disabled={isAdded}
+                        className={cn(
+                          "h-8 px-3 text-xs font-semibold rounded-xl shrink-0 gap-1",
+                          isAdded
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-primary hover:bg-primary/90 text-primary-foreground"
+                        )}
+                      >
+                        {isAdded ? (
+                          <>
+                            <Check className="h-3 w-3" />
+                            <span>Added</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-3 w-3" />
+                            <span>Add</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 );
               })

@@ -76,7 +76,21 @@ export function extractInstamartProductsFromMcp(data: unknown): RawSwiggyInstama
     // Direct product / item arrays
     if (Array.isArray(obj.products)) rawList.push(...obj.products);
     if (Array.isArray(obj.items)) rawList.push(...obj.items);
-    if (Array.isArray(obj.variations)) rawList.push(...obj.variations);
+    if (Array.isArray(obj.variations)) {
+      for (const v of obj.variations) {
+        if (v && typeof v === "object") {
+          const varObj = v as Record<string, unknown>;
+          rawList.push({
+            name: obj.name ?? obj.display_name ?? obj.displayName ?? obj.title,
+            display_name: obj.display_name ?? obj.displayName ?? obj.name ?? obj.title,
+            brand: obj.brand ?? obj.brand_name ?? obj.brandName,
+            category: obj.category ?? obj.category_name ?? obj.categoryName ?? obj.superCategory,
+            images: obj.images ?? obj.image ?? obj.imageUrl ?? obj.image_url ?? obj.media,
+            ...varObj,
+          });
+        }
+      }
+    }
 
     // Cards / widgets arrays
     if (Array.isArray(obj.cards)) {
@@ -140,16 +154,25 @@ export function extractInstamartProductsFromMcp(data: unknown): RawSwiggyInstama
       it = it.info as Record<string, unknown>;
     }
 
-    // If item has variations array and top-level misses price or spin, merge variation fields
+    // If item has variations array, carefully preserve parent fields while merging variation fields
     if (Array.isArray(it.variations) && it.variations.length > 0) {
       const firstVar = it.variations[0];
       if (firstVar && typeof firstVar === "object") {
+        const v = firstVar as Record<string, unknown>;
         it = {
-          ...firstVar,
+          ...v,
           ...it,
-          price: it.price ?? firstVar.price ?? firstVar.store_price,
-          mrp: it.mrp ?? firstVar.mrp,
-          spin_id: it.spin_id ?? it.spin ?? firstVar.spin_id ?? firstVar.spin ?? firstVar.id,
+          name: it.name ?? it.display_name ?? it.displayName ?? it.title ?? v.name ?? v.display_name ?? v.displayName ?? v.title,
+          display_name: it.display_name ?? it.displayName ?? it.name ?? it.title ?? v.display_name ?? v.displayName ?? v.name ?? v.title,
+          brand: it.brand ?? it.brand_name ?? it.brandName ?? v.brand ?? v.brand_name ?? v.brandName,
+          images: it.images ?? it.image ?? it.imageUrl ?? it.image_url ?? it.media ?? v.images ?? v.image ?? v.imageUrl ?? v.image_url ?? v.media,
+          price: it.price ?? v.price ?? v.store_price ?? v.storePrice ?? v.offer_price ?? v.offerPrice,
+          mrp: it.mrp ?? it.mrpPrice ?? it.mrp_price ?? v.mrp ?? v.mrpPrice ?? v.mrp_price,
+          spin_id: it.spin_id ?? it.spin ?? v.spin_id ?? v.spin ?? v.id ?? it.id,
+          quantity: it.quantity ?? it.weight ?? it.unit ?? it.pack_size ?? it.packSize ?? v.quantity ?? v.weight ?? v.unit ?? v.pack_size ?? v.packSize,
+          inStock: it.inStock ?? it.in_stock ?? v.inStock ?? v.in_stock ?? v.inventory,
+          inventory: it.inventory ?? v.inventory,
+          category: it.category ?? it.category_name ?? it.categoryName ?? v.category ?? v.category_name ?? v.categoryName,
         };
       }
     }

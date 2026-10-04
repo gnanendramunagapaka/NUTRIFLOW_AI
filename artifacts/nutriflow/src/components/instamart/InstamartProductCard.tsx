@@ -80,15 +80,19 @@ export function InstamartProductCard({
       {/* Details */}
       <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
         <div className="space-y-1">
-          <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-            {product.category}
-          </span>
+          {product.category ? (
+            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+              {product.category}
+            </span>
+          ) : null}
           <h4 className="text-xs font-bold text-foreground leading-snug line-clamp-2 group-hover:text-emerald-600 transition-colors">
             {product.name}
           </h4>
-          <span className="text-[11px] text-muted-foreground font-medium block">
-            {product.quantity} {product.unit}
-          </span>
+          {[product.quantity, product.unit].filter(Boolean).join(" ") ? (
+            <span className="text-[11px] text-muted-foreground font-medium block">
+              {[product.quantity, product.unit].filter(Boolean).join(" ")}
+            </span>
+          ) : null}
         </div>
 
         {/* Pricing & Add */}

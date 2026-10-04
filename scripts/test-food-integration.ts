@@ -216,6 +216,7 @@ function createMockMcpClient(options?: {
   throwAuthError?: boolean;
   throwMcpError?: boolean;
   productionEnvelopeAddresses?: any;
+  menuEnvelope?: any;
 }) {
   const customFetch: typeof fetch = async (url, init): Promise<Response> => {
     const urlStr = String(url);
@@ -278,6 +279,12 @@ function createMockMcpClient(options?: {
     }
 
     if (toolName === "get_restaurant_menu") {
+      if (options?.menuEnvelope) {
+        return new Response(JSON.stringify(options.menuEnvelope), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       return new Response(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -977,8 +984,337 @@ console.log("35. Testing Regression: executeFoodRecommendation with production M
   console.log("   ✓ End-to-end recommendation flow handles production MCP envelope with both clarification and explicit address selection");
 }
 
+// ─── Test 36: Real Swiggy Image Fields Normalization into sourceMetadata.imageUrl
+console.log("36. Testing Real Swiggy Image Fields Normalization (cloudinaryImageId, imageId, image, imageUrl)");
+{
+  const r1 = normalizeSwiggyFoodRestaurant({
+    id: "rst_img_1",
+    name: "Meghana Biryani",
+    cloudinaryImageId: "fl_lossy,f_auto,q_auto/meghana_123",
+  });
+  assert(r1.sourceMetadata.imageUrl?.includes("meghana_123"), "Must normalize cloudinaryImageId into media CDN URL");
+
+  const r2 = normalizeSwiggyFoodRestaurant({
+    id: "rst_img_2",
+    name: "Truffles",
+    imageUrl: "https://media-assets.swiggy.com/swiggy/image/upload/truffles_456.jpg",
+  });
+  assert(r2.sourceMetadata.imageUrl === "https://media-assets.swiggy.com/swiggy/image/upload/truffles_456.jpg", "Must preserve full imageUrl");
+
+  const r3 = normalizeSwiggyFoodRestaurant({
+    id: "rst_img_3",
+    name: "Corner House",
+    imageId: "corner_789",
+  });
+  assert(r3.sourceMetadata.imageUrl?.includes("corner_789"), "Must normalize imageId");
+
+  const r4 = normalizeSwiggyFoodRestaurant({
+    id: "rst_img_4",
+    name: "No Image Cafe",
+  });
+  assert(r4.sourceMetadata.imageUrl === undefined, "Missing image must honestly remain undefined without fabrication");
+
+  console.log("   ✓ Real Swiggy restaurant image fields correctly normalized into sourceMetadata.imageUrl without fabrication");
+}
+
+// ─── Test 37: Menu Item Normalization Fidelity ─────────────────────────────────
+console.log("37. Testing Menu Item Normalization Fidelity (names, prices, images, categories, no fake fallbacks)");
+{
+  // Test name extraction from various Swiggy candidate fields
+  const names = [
+    { input: { id: "m1", name: "Paneer Tikka" }, expected: "Paneer Tikka" },
+    { input: { id: "m2", item_name: "Dal Makhani" }, expected: "Dal Makhani" },
+    { input: { id: "m3", itemName: "Butter Naan" }, expected: "Butter Naan" },
+    { input: { id: "m4", display_name: "Garlic Kulcha" }, expected: "Garlic Kulcha" },
+    { input: { id: "m5", displayName: "Lassi" }, expected: "Lassi" },
+    { input: { id: "m6", title: "Gulab Jamun" }, expected: "Gulab Jamun" },
+    { input: { id: "m7", dish_name: "Rasmalai" }, expected: "Rasmalai" },
+    { input: { id: "m8", dishName: "Kulfi" }, expected: "Kulfi" },
+  ];
+  for (const n of names) {
+    const res = normalizeSwiggyFoodMenuItem(n.input);
+    assert(res.name === n.expected, `Expected name '${n.expected}', got '${res.name}'`);
+  }
+
+  // Truly missing name must remain undefined, NEVER "Menu Item"
+  const missingName = normalizeSwiggyFoodMenuItem({ id: "m_empty" });
+  assert(missingName.name === undefined, "Missing name must remain undefined");
+  assert(missingName.name !== "Menu Item", "Must NEVER generate 'Menu Item' fallback");
+
+  // Price handling: paise vs rupees vs missing
+  const p1 = normalizeSwiggyFoodMenuItem({ id: "p1", name: "Dish 1", price_in_paise: 25000 });
+  assert(p1.price === 250, "price_in_paise must be converted to rupees (250)");
+
+  const p2 = normalizeSwiggyFoodMenuItem({ id: "p2", name: "Dish 2", priceInPaise: 34000 });
+  assert(p2.price === 340, "priceInPaise must be converted to rupees (340)");
+
+  const p3 = normalizeSwiggyFoodMenuItem({ id: "p3", name: "Dish 3", price_in_paise: "38000" });
+  assert(p3.price === 380, "string price_in_paise must be converted to rupees (380)");
+
+  const p4 = normalizeSwiggyFoodMenuItem({ id: "p4", name: "Dish 4", price: 180 });
+  assert(p4.price === 180, "price in rupees (180) must be preserved as 180");
+
+  const p5 = normalizeSwiggyFoodMenuItem({ id: "p5", name: "Dish 5" });
+  assert(p5.price === undefined, "Missing price must remain undefined without fake ₹0");
+
+  // Images handling
+  const img1 = normalizeSwiggyFoodMenuItem({ id: "img1", name: "Biryani", imageId: "biryani_cdn_123" });
+  assert(img1.sourceMetadata.imageUrl?.includes("biryani_cdn_123"), "Must normalize imageId");
+
+  const img2 = normalizeSwiggyFoodMenuItem({ id: "img2", name: "Biryani 2", cloudinaryImageId: "cloud_img_456" });
+  assert(img2.sourceMetadata.imageUrl?.includes("cloud_img_456"), "Must normalize cloudinaryImageId");
+
+  const img3 = normalizeSwiggyFoodMenuItem({ id: "img3", name: "Biryani 3" });
+  assert(img3.sourceMetadata.imageUrl === undefined, "Missing image must remain undefined");
+
+  // Category and description preservation
+  const itemWithMeta = normalizeSwiggyFoodMenuItem({
+    id: "item_meta",
+    name: "Special Biryani",
+    category: "Biryani Specials",
+    description: "Slow cooked basmati rice with exotic spices.",
+  });
+  assert(itemWithMeta.categoryTags?.includes("Biryani Specials"), "Category must be in categoryTags");
+  assert(itemWithMeta.sourceMetadata.category === "Biryani Specials", "Category must be in sourceMetadata");
+  assert(itemWithMeta.sourceMetadata.description === "Slow cooked basmati rice with exotic spices.", "Description must be in sourceMetadata");
+
+  console.log("   ✓ Menu item normalization fidelity verified: real names, prices, images, categories preserved without fabrication");
+}
+
+// ─── Test 38: Swiggy REGULAR envelope with ItemCategory, NestedItemCategory, and MenuCarousel ───
+console.log("38. Testing Swiggy REGULAR envelope with ItemCategory, NestedItemCategory, and MenuCarousel");
+{
+  const productionMenuEnvelope = {
+    cards: [
+      {
+        card: {
+          card: {
+            "@type": "type.googleapis.com/swiggy.presentation.food.v2.Restaurant",
+            info: { id: "10575", name: "Meghana Foods" },
+          },
+        },
+      },
+      {
+        groupedCard: {
+          cardGroupMap: {
+            REGULAR: {
+              cards: [
+                {
+                  card: {
+                    card: {
+                      "@type": "type.googleapis.com/swiggy.presentation.food.v2.ItemCategory",
+                      title: "Recommended",
+                      itemCards: [
+                        {
+                          card: {
+                            "@type": "type.googleapis.com/swiggy.presentation.food.v2.Dish",
+                            info: {
+                              id: "dish_101",
+                              name: "Chicken Boneless Biryani",
+                              description: "Signature biryani dish",
+                              imageId: "meghana_chk_biryani",
+                              price: 34000,
+                              inStock: 1,
+                              itemAttribute: { vegClassifier: "NONVEG" },
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+                {
+                  card: {
+                    card: {
+                      "@type": "type.googleapis.com/swiggy.presentation.food.v2.NestedItemCategory",
+                      title: "Starters",
+                      categories: [
+                        {
+                          title: "Chicken Starters",
+                          itemCards: [
+                            {
+                              card: {
+                                info: {
+                                  id: "dish_102",
+                                  name: "Chilli Chicken",
+                                  price: 28000,
+                                  imageId: "chilli_chk_img",
+                                  itemAttribute: { vegClassifier: "NONVEG" },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                },
+                {
+                  card: {
+                    card: {
+                      "@type": "type.googleapis.com/swiggy.presentation.food.v2.MenuCarousel",
+                      title: "Top Picks",
+                      carousel: [
+                        {
+                          dish: {
+                            info: {
+                              id: "dish_103",
+                              name: "Paneer 65",
+                              price: 24000,
+                              imageId: "paneer65_img",
+                              itemAttribute: { vegClassifier: "VEG" },
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  };
+
+  const extracted = extractFoodMenuItemsFromMcp(productionMenuEnvelope);
+  assert(extracted.length === 3, `Expected 3 extracted menu items, got ${extracted.length}`);
+
+  const item1 = extracted.find((it) => it.id === "dish_101");
+  assert(item1 !== undefined, "Extracted dish_101 from ItemCategory");
+  assert(item1?.name === "Chicken Boneless Biryani", "Preserved item name");
+  assert(item1?.category === "Recommended", `Preserved category name 'Recommended', got '${item1?.category}'`);
+  assert(item1?.imageId === "meghana_chk_biryani", "Preserved imageId");
+
+  const item2 = extracted.find((it) => it.id === "dish_102");
+  assert(item2 !== undefined, "Extracted dish_102 from NestedItemCategory");
+  assert(item2?.name === "Chilli Chicken", "Preserved chilli chicken name");
+  assert(item2?.category === "Chicken Starters", "Preserved nested category title");
+
+  const item3 = extracted.find((it) => it.id === "dish_103");
+  assert(item3 !== undefined, "Extracted dish_103 from MenuCarousel");
+  assert(item3?.name === "Paneer 65", "Preserved paneer 65 name");
+  assert(item3?.category === "Top Picks", "Preserved carousel category title");
+
+  console.log("   ✓ Swiggy REGULAR envelope successfully extracted ItemCategory, NestedItemCategory, and MenuCarousel items with categories");
+}
+
+// ─── Test 39: Markdown Code-Fenced JSON and Substring JSON Parsing ─────────────
+console.log("39. Testing Markdown Code-Fenced JSON Parsing in extractSwiggyMcpContent");
+{
+  const fencedEnvelope = {
+    jsonrpc: "2.0",
+    id: 12345,
+    result: {
+      content: [
+        {
+          type: "text",
+          text: "```json\n{\n  \"menu\": [\n    {\n      \"title\": \"Main Course\",\n      \"items\": [\n        { \"id\": \"fenced_1\", \"name\": \"Butter Chicken\", \"price\": 320 }\n      ]\n    }\n  ]\n}\n```",
+        },
+      ],
+    },
+  };
+
+  const content = extractSwiggyMcpContent(fencedEnvelope);
+  assert(content !== undefined, "Unwrapped fenced envelope");
+  const items = extractFoodMenuItemsFromMcp(content);
+  assert(items.length === 1, `Expected 1 item from fenced JSON, got ${items.length}`);
+  assert(items[0].id === "fenced_1", "Extracted fenced_1 item");
+  assert(items[0].name === "Butter Chicken", "Preserved Butter Chicken name");
+  assert(items[0].category === "Main Course", "Preserved Main Course category");
+
+  console.log("   ✓ Markdown code-fenced JSON parsed successfully without throwing or dropping content");
+}
+
+// ─── Test 40: End-to-End executeFoodRecommendation in Mode 'menu' with GroupedCard ───
+console.log("40. Testing End-to-End executeFoodRecommendation in Menu Mode with Prefix Stripping");
+{
+  const client = createMockMcpClient({
+    menuEnvelope: {
+      jsonrpc: "2.0",
+      id: 999,
+      result: {
+        cards: [
+          {
+            groupedCard: {
+              cardGroupMap: {
+                REGULAR: {
+                  cards: [
+                    {
+                      card: {
+                        card: {
+                          title: "Biryani",
+                          itemCards: [
+                            {
+                              card: {
+                                info: {
+                                  id: "mcp_dish_501",
+                                  name: "Special Mutton Biryani",
+                                  price_in_paise: 45000,
+                                  imageId: "mutton_biryani_img",
+                                  description: "Tender mutton cooked in fragrant basmati rice.",
+                                },
+                              },
+                            },
+                          ],
+                        },
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    },
+  });
+
+  const profile = buildProfileContextFromProfile({
+    dietary_preferences: ["non-vegetarian"],
+    health_goals: ["maintenance"],
+  });
+
+  // Call with "food-rst-10575" to verify prefix stripping
+  const res = await executeFoodRecommendation(
+    { id: "usr_menu_1", profile },
+    { mode: "menu", restaurantId: "food-rst-10575", addressId: "addr_home_1" },
+    { mcpClient: client, getTokenFn: async () => "valid_token" }
+  );
+
+  assert(res.status === 200, `Expected status 200, got ${res.status}`);
+  const data = res.data as any;
+  assert(data.mode === "menu", "Response mode is 'menu'");
+  assert(data.recommendations.length === 1, `Expected 1 recommendation, got ${data.recommendations.length}`);
+  assert(data.restaurantInfo?.id === "10575", `Restaurant ID stripped prefix to '10575', got '${data.restaurantInfo?.id}'`);
+
+  const rec = data.recommendations[0];
+  assert(rec.candidate.name === "Special Mutton Biryani", `Dish name preserved, got: ${rec.candidate.name}`);
+  assert(rec.candidate.price === 450, `Paise converted to rupees (450), got: ${rec.candidate.price}`);
+  assert(rec.candidate.sourceMetadata.imageUrl?.includes("mutton_biryani_img"), "Dish image URL preserved in sourceMetadata");
+  assert(rec.candidate.sourceMetadata.category === "Biryani", "Dish category preserved in sourceMetadata");
+  assert(rec.candidate.sourceMetadata.description?.includes("Tender mutton"), "Dish description preserved in sourceMetadata");
+
+  console.log("   ✓ End-to-end menu recommendation successfully extracted groupedCard menu with prefix stripping, prices, images, and categories");
+}
+
+// ─── Test 41: Strict Absence of Fake Food / Menu Fallbacks ─────────────────────
+console.log("41. Testing Strict Absence of Fake Food / Menu Fallbacks");
+{
+  const missingData = normalizeSwiggyFoodMenuItem({
+    id: "dish_missing_all",
+  });
+  assert(missingData.name === undefined, "Missing dish name must be undefined");
+  assert(missingData.name !== "Menu Item", "Must NEVER output 'Menu Item'");
+  assert(missingData.price === undefined, "Missing dish price must be undefined");
+  assert(missingData.sourceMetadata.imageUrl === undefined, "Missing dish image must be undefined");
+
+  console.log("   ✓ Strict absence of fake food/menu fallbacks verified: no 'Menu Item', no fake prices, no fake images");
+}
+
 console.log("\n==================================================================");
-console.log("🎉 ALL 35 FOOD INTEGRATION TESTS PASSED SUCCESSFULLY!");
+console.log("🎉 ALL 41 FOOD INTEGRATION TESTS PASSED SUCCESSFULLY!");
 console.log("==================================================================\n");
 
 

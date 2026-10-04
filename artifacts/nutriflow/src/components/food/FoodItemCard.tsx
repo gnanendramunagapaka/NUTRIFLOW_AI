@@ -1,5 +1,5 @@
 import React from "react";
-import { ShoppingCart, Heart, Plus, Check } from "lucide-react";
+import { ShoppingCart, Heart, Plus, Check, Utensils } from "lucide-react";
 import { AppCard, PrimaryButton } from "@/components/layout/primitives";
 import { cn } from "@/lib/utils";
 
@@ -69,8 +69,9 @@ export function FoodItemCard({
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-muted/60 text-muted-foreground text-xs font-medium">
-            Food Item
+          <div className="w-full h-full flex flex-col items-center justify-center bg-muted/60 text-muted-foreground p-3 text-center">
+            <Utensils className="h-6 w-6 text-muted-foreground/40 mb-1" />
+            <span className="text-xs font-semibold">{item.name}</span>
           </div>
         )}
 
@@ -128,9 +129,11 @@ export function FoodItemCard({
             <h4 className="text-sm font-bold text-foreground leading-snug line-clamp-1 group-hover:text-primary transition-colors">
               {item.name}
             </h4>
-            <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 shrink-0">
-              ₹{item.price}
-            </span>
+            {item.price > 0 && (
+              <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400 shrink-0">
+                ₹{item.price}
+              </span>
+            )}
           </div>
           {item.description && (
             <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">

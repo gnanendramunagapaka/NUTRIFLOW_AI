@@ -154,21 +154,26 @@ export async function executeFoodRecommendation(
         };
       }
 
-      restaurantInfo = { id: restId };
+      const cleanRestId = restId.replace(/^food-rst-/, "");
+      restaurantInfo = { id: cleanRestId };
 
       if (request.query && request.query.trim()) {
         const rawMenuItems = await mcpClient.searchMenu(userToken, {
           query: request.query.trim(),
-          restaurant_id: restId,
+          restaurant_id: cleanRestId,
           address_id: selectedAddress.id,
+          lat: selectedAddress.lat,
+          lng: selectedAddress.lng,
         });
-        candidates = normalizeFoodMenuItemsBatch(rawMenuItems, restId);
+        candidates = normalizeFoodMenuItemsBatch(rawMenuItems, cleanRestId);
       } else {
         const rawMenuItems = await mcpClient.getRestaurantMenu(userToken, {
-          restaurant_id: restId,
+          restaurant_id: cleanRestId,
           address_id: selectedAddress.id,
+          lat: selectedAddress.lat,
+          lng: selectedAddress.lng,
         });
-        candidates = normalizeFoodMenuItemsBatch(rawMenuItems, restId);
+        candidates = normalizeFoodMenuItemsBatch(rawMenuItems, cleanRestId);
       }
     } else {
       // Restaurants mode

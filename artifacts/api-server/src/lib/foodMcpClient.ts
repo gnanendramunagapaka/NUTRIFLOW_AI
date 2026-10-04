@@ -175,11 +175,29 @@ export class FoodMcpClient {
    */
   async getRestaurantMenu(
     userToken: string,
-    args: { restaurant_id: string; address_id?: string }
+    args: { restaurant_id: string; address_id?: string; lat?: number; lng?: number }
   ): Promise<RawSwiggyFoodMenuItem[]> {
     if (!userToken) {
       throw new SwiggyAuthError("Missing Swiggy access token");
     }
+
+    const rawRestId = args.restaurant_id || (args as any).restaurantId;
+    const cleanRestId = String(rawRestId || "").replace(/^food-rst-/, "").trim();
+    const addressId = args.address_id || (args as any).addressId;
+
+    const toolArguments: Record<string, unknown> = {
+      ...(args || {}),
+    };
+    toolArguments.restaurant_id = cleanRestId;
+    toolArguments.restaurantId = cleanRestId;
+    toolArguments.id = cleanRestId;
+
+    if (addressId) {
+      toolArguments.address_id = addressId;
+      toolArguments.addressId = addressId;
+    }
+    if (args.lat != null) toolArguments.lat = args.lat;
+    if (args.lng != null) toolArguments.lng = args.lng;
 
     try {
       const res = await this.fetchFn(this.foodBaseUrl, {
@@ -191,7 +209,7 @@ export class FoodMcpClient {
           method: "tools/call",
           params: {
             name: "get_restaurant_menu",
-            arguments: args,
+            arguments: toolArguments,
           },
         }),
       });
@@ -221,11 +239,31 @@ export class FoodMcpClient {
    */
   async searchMenu(
     userToken: string,
-    args: { query: string; restaurant_id?: string; address_id?: string }
+    args: { query: string; restaurant_id?: string; address_id?: string; lat?: number; lng?: number }
   ): Promise<RawSwiggyFoodMenuItem[]> {
     if (!userToken) {
       throw new SwiggyAuthError("Missing Swiggy access token");
     }
+
+    const rawRestId = args.restaurant_id || (args as any).restaurantId;
+    const cleanRestId = rawRestId ? String(rawRestId).replace(/^food-rst-/, "").trim() : undefined;
+    const addressId = args.address_id || (args as any).addressId;
+
+    const toolArguments: Record<string, unknown> = {
+      ...(args || {}),
+    };
+    toolArguments.query = args.query;
+    if (cleanRestId) {
+      toolArguments.restaurant_id = cleanRestId;
+      toolArguments.restaurantId = cleanRestId;
+      toolArguments.id = cleanRestId;
+    }
+    if (addressId) {
+      toolArguments.address_id = addressId;
+      toolArguments.addressId = addressId;
+    }
+    if (args.lat != null) toolArguments.lat = args.lat;
+    if (args.lng != null) toolArguments.lng = args.lng;
 
     try {
       const res = await this.fetchFn(this.foodBaseUrl, {
@@ -237,7 +275,7 @@ export class FoodMcpClient {
           method: "tools/call",
           params: {
             name: "search_menu",
-            arguments: args,
+            arguments: toolArguments,
           },
         }),
       });

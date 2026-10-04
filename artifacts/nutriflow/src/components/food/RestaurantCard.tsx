@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 export interface RestaurantItemData {
   id: string | number;
   name: string;
-  cuisine: string;
+  cuisine?: string;
   rating?: number;
   deliveryTime?: string;
   costForTwo?: number | string;
@@ -46,8 +46,8 @@ export function RestaurantCard({
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-muted/60 text-muted-foreground gap-1.5 p-4 text-center">
-            <Store className="h-6 w-6 text-muted-foreground/60" />
-            <span className="text-xs font-medium">Restaurant Partner</span>
+            <Store className="h-7 w-7 text-muted-foreground/40" />
+            <span className="text-xs font-medium">{restaurant.name}</span>
           </div>
         )}
 
@@ -80,9 +80,11 @@ export function RestaurantCard({
           <h3 className="text-sm sm:text-base font-bold text-foreground leading-snug truncate group-hover:text-primary transition-colors">
             {restaurant.name}
           </h3>
-          <p className="text-xs text-muted-foreground truncate">
-            {restaurant.cuisine || "Multi-cuisine"}
-          </p>
+          {restaurant.cuisine ? (
+            <p className="text-xs text-muted-foreground truncate">
+              {restaurant.cuisine}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/50">
@@ -90,9 +92,7 @@ export function RestaurantCard({
             <span className="font-medium text-foreground/80 truncate">
               ₹{restaurant.costForTwo} for two
             </span>
-          ) : (
-            <span className="font-medium text-foreground/80">Available</span>
-          )}
+          ) : null}
 
           {restaurant.distance && (
             <span className="flex items-center gap-0.5 shrink-0">

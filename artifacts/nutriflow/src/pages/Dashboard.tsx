@@ -474,14 +474,14 @@ export default function Dashboard() {
                     const c = rec.candidate;
                     const meta = c.sourceMetadata;
                     const mealId = meta?.restaurantId || meta?.menuItemId || c.id;
-                    const mealName = c.name || "Restaurant Partner";
+                    const mealName = c.name || "";
                     const mealPrice = c.price || meta?.costForTwo || 0;
                     const isVeg =
                       c.safetyResult?.status === "eligible" &&
                       (c.categoryTags?.includes("vegetarian") || !mealName.toLowerCase().includes("chicken"));
                     const rating = meta?.rating;
-                    const cuisine = c.categoryTags?.[0] || c.contextTags?.[0] || "Wholesome";
-                    const description = c.categoryTags?.join(", ") || c.contextTags?.join(", ") || "Available on Swiggy";
+                    const cuisine = c.categoryTags?.[0] || c.contextTags?.[0] || "";
+                    const description = c.categoryTags?.join(", ") || c.contextTags?.join(", ") || "";
 
                     const isSaved = savedMeals.some(
                       (sm: any) => sm.mealId === mealId || sm.name === mealName || sm.meal_id === mealId
@@ -493,10 +493,19 @@ export default function Dashboard() {
                         className="flex flex-col justify-between overflow-hidden group hover:border-primary/40 transition-all"
                       >
                         <div className="aspect-[16/9] bg-muted relative overflow-hidden">
-                          <div className="w-full h-full flex flex-col items-center justify-center bg-muted/60 text-muted-foreground p-3 text-center gap-1">
-                            <Utensils className="h-6 w-6 text-muted-foreground/60" />
-                            <span className="text-xs font-semibold">{mealName}</span>
-                          </div>
+                          {meta?.imageUrl ? (
+                            <img
+                              src={meta.imageUrl}
+                              alt={mealName}
+                              className="w-full h-full object-cover group-hover:scale-104 transition-transform duration-300"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-muted/60 text-muted-foreground p-3 text-center gap-1">
+                              <Utensils className="h-6 w-6 text-muted-foreground/60" />
+                              <span className="text-xs font-semibold">{mealName}</span>
+                            </div>
+                          )}
 
                           {/* Save Heart Button */}
                           <button
@@ -528,19 +537,23 @@ export default function Dashboard() {
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                              {description}
-                            </p>
+                            {description ? (
+                              <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
+                                {description}
+                              </p>
+                            ) : null}
                           </div>
 
                           <div className="space-y-3 pt-1">
-                            <div className="grid grid-cols-2 gap-2 text-center text-xs bg-muted/30 p-2 rounded-xl">
-                              <div>
-                                <span className="text-[10px] text-muted-foreground uppercase block font-medium">
-                                  Cuisine
-                                </span>
-                                <span className="font-bold text-foreground truncate block">{cuisine}</span>
-                              </div>
+                            <div className={`grid ${cuisine ? "grid-cols-2" : "grid-cols-1"} gap-2 text-center text-xs bg-muted/30 p-2 rounded-xl`}>
+                              {cuisine ? (
+                                <div>
+                                  <span className="text-[10px] text-muted-foreground uppercase block font-medium">
+                                    Cuisine
+                                  </span>
+                                  <span className="font-bold text-foreground truncate block">{cuisine}</span>
+                                </div>
+                              ) : null}
                               <div>
                                 <span className="text-[10px] text-muted-foreground uppercase block font-medium">
                                   Diet

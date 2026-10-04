@@ -493,7 +493,8 @@ await test("11. Missing optional fields", () => {
 
   const normalized = normalizeSwiggyInstamartProduct(bareProduct);
   assert(normalized.id === "insta-prod-bare_min_1", "ID must be prefixed");
-  assert(normalized.name === "Grocery Item", "Should fallback to clean default name");
+  assert(normalized.name === undefined, "Should leave name undefined if not provided by source");
+  assert(normalized.name !== "Grocery Item", "Must NEVER produce fake Grocery Item name");
   assert(normalized.price === undefined, "Price should be undefined if not provided");
   assert(normalized.availability === undefined, "Availability should be undefined if not provided");
   assert(normalized.safetyData.dietaryClassification === undefined, "Must NOT invent dietary classification");
@@ -835,6 +836,109 @@ await test("30. Instamart recommendation response adheres strictly to schema", a
   const parsed = InstamartRecommendationResponseSchema.safeParse(result.data);
   assert(parsed.success === true, `Response schema validation failed: ${JSON.stringify((parsed as any).error?.errors)}`);
   assert((result.data as any).recommendations.length <= 2, "Limit of 2 respected");
+});
+
+await test("31. Expanded product name extraction from all real Swiggy fields", () => {
+  const testCases = [
+    { raw: { id: "n1", name: "Amul Butter 500g" }, expected: "Amul Butter 500g" },
+    { raw: { id: "n2", display_name: "Nandini Milk 1L" }, expected: "Nandini Milk 1L" },
+    { raw: { id: "n3", displayName: "Aashirvaad Atta 5kg" }, expected: "Aashirvaad Atta 5kg" },
+    { raw: { id: "n4", item_name: "Tata Salt 1kg" }, expected: "Tata Salt 1kg" },
+    { raw: { id: "n5", itemName: "Fortune Sunlite Oil 1L" }, expected: "Fortune Sunlite Oil 1L" },
+    { raw: { id: "n6", product_name: "Maggi 2-Minute Noodles" }, expected: "Maggi 2-Minute Noodles" },
+    { raw: { id: "n7", productName: "Britannia Bread 400g" }, expected: "Britannia Bread 400g" },
+    { raw: { id: "n8", title: "Dettol Liquid Soap" }, expected: "Dettol Liquid Soap" },
+    { raw: { id: "n9", product_title: "Surf Excel Matic 1kg" }, expected: "Surf Excel Matic 1kg" },
+    { raw: { id: "n10", variations: [{ display_name: "Organic Honey 250g" }] }, expected: "Organic Honey 250g" },
+    { raw: { id: "n11", variations: [{ name: "Organic Jaggery 500g" }] }, expected: "Organic Jaggery 500g" },
+  ];
+
+  for (const tc of testCases) {
+    const normalized = normalizeSwiggyInstamartProduct(tc.raw);
+    assert(normalized.name === tc.expected, `Failed for field: ${JSON.stringify(tc.raw)} (got: ${normalized.name})`);
+    assert(normalized.name !== "Grocery Item", "Must NEVER produce Grocery Item fallback");
+  }
+});
+
+await test("32. Instamart image object array parsing", () => {
+  const rawWithUrlObj = {
+    id: "img_obj_1",
+    name: "Almonds 500g",
+    images: [{ url: "https://media-assets.swiggy.com/swiggy/image/upload/almonds_url.jpg" }],
+  };
+  const n1 = normalizeSwiggyInstamartProduct(rawWithUrlObj);
+  assert(n1.sourceMetadata.imageUrl === "https://media-assets.swiggy.com/swiggy/image/upload/almonds_url.jpg", "Must extract direct url");
+
+  const rawWithImageIdObj = {
+    id: "img_obj_2",
+    name: "Cashews 200g",
+    images: [{ imageId: "cashews_hash_123" }],
+  };
+  const n2 = normalizeSwiggyInstamartProduct(rawWithImageIdObj);
+  assert(n2.sourceMetadata.imageUrl?.includes("cashews_hash_123") === true, "Must construct Swiggy CDN URL from imageId object");
+
+  const rawWithImage_IdObj = {
+    id: "img_obj_3",
+    name: "Walnuts 250g",
+    images: [{ image_id: "walnuts_hash_456" }],
+  };
+  const n3 = normalizeSwiggyInstamartProduct(rawWithImage_IdObj);
+  assert(n3.sourceMetadata.imageUrl?.includes("walnuts_hash_456") === true, "Must construct Swiggy CDN URL from image_id object");
+
+  const rawWithIdObj = {
+    id: "img_obj_4",
+    name: "Pistachios 100g",
+    images: [{ id: "pista_hash_789" }],
+  };
+  const n4 = normalizeSwiggyInstamartProduct(rawWithIdObj);
+  assert(n4.sourceMetadata.imageUrl?.includes("pista_hash_789") === true, "Must construct Swiggy CDN URL from id object");
+});
+
+await test("33. Real product names survive nested variation extraction", () => {
+  const mcpPayload = {
+    result: {
+      structuredContent: {
+        products: [
+          {
+            id: "parent_prod_1",
+            name: "Tata Tea Gold",
+            brand: "Tata",
+            variations: [
+              {
+                id: "var_prod_101",
+                spin_id: "spin_tea_500g",
+                price: 280,
+                mrp: 310,
+                weight: "500g",
+              },
+            ],
+          },
+        ],
+      },
+    },
+  };
+
+  const content = extractSwiggyMcpContent(mcpPayload);
+  const products = extractInstamartProductsFromMcp(content);
+  assert(products.length >= 1, "Must extract product with variations");
+  const normalized = normalizeSwiggyInstamartProduct(products[0]);
+  assert(normalized.name === "Tata Tea Gold", "Variation must retain parent product name");
+  assert(normalized.sourceMetadata.brand === "Tata", "Variation must retain parent brand");
+  assert(normalized.price === 280, "Must have variation price");
+});
+
+await test("34. Backend adapter NEVER generates Grocery Item", () => {
+  const mixedRaw: any[] = [
+    { id: "p_clean_1" },
+    { id: "p_clean_2", price: 100 },
+    { id: "p_clean_3", inStock: true },
+  ];
+
+  for (const raw of mixedRaw) {
+    const normalized = normalizeSwiggyInstamartProduct(raw);
+    assert(normalized.name !== "Grocery Item", `Must NEVER produce Grocery Item, got: ${normalized.name}`);
+    assert(normalized.name === undefined, `Expected undefined name when missing, got: ${normalized.name}`);
+  }
 });
 
 console.log(`\n🎉 All ${passedCount} Phase 3 Part 3 Live Instamart Integration tests passed successfully!\n`);

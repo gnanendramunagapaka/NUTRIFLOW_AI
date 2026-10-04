@@ -217,52 +217,59 @@ export default function Discover() {
   const filteredRestaurants: RestaurantItemData[] = useMemo(() => {
     if (!foodRecData?.recommendations) return [];
 
-    return foodRecData.recommendations.map((rec) => {
-      const c = rec.candidate;
-      const meta = c.sourceMetadata;
-      const cuisine =
-        c.categoryTags?.join(", ") ||
-        c.contextTags?.[0] ||
-        "Multi-Cuisine";
+    return foodRecData.recommendations
+      .filter((rec) => rec.candidate.name && rec.candidate.name.trim().length > 0)
+      .map((rec) => {
+        const c = rec.candidate;
+        const meta = c.sourceMetadata;
+        const cuisine =
+          c.categoryTags?.join(", ") ||
+          c.contextTags?.[0] ||
+          undefined;
 
-      return {
-        id: meta?.restaurantId || c.id,
-        name: c.name || "Restaurant Partner",
-        cuisine,
-        rating: meta?.rating,
-        deliveryTime: undefined,
-        costForTwo: meta?.costForTwo,
-        distance: meta?.distance,
-        imageUrl: meta?.imageUrl || null,
-        isOpen: c.availability !== "unavailable",
-        tags: c.contextTags || [],
-      };
-    });
+        return {
+          id: meta?.restaurantId || c.id,
+          name: c.name!,
+          cuisine,
+          rating: meta?.rating,
+          deliveryTime: undefined,
+          costForTwo: meta?.costForTwo,
+          distance: meta?.distance,
+          imageUrl: meta?.imageUrl || null,
+          isOpen: c.availability !== "unavailable",
+          tags: c.contextTags || [],
+        };
+      });
   }, [foodRecData]);
 
   // Live Menu items for the selected restaurant modal
   const selectedRestaurantMenuItems: FoodItemData[] = useMemo(() => {
     if (!menuRecData?.recommendations) return [];
 
-    return menuRecData.recommendations.map((rec) => {
-      const c = rec.candidate;
-      const meta = c.sourceMetadata;
-      const isVeg =
-        c.safetyResult?.status === "eligible" &&
-        (c.categoryTags?.includes("vegetarian") || !c.name?.toLowerCase().includes("chicken"));
+    return menuRecData.recommendations
+      .filter((rec) => Boolean(rec.candidate?.name?.trim()))
+      .map((rec) => {
+        const c = rec.candidate;
+        const meta = c.sourceMetadata;
+        const isVeg =
+          c.safetyResult?.status === "eligible" &&
+          (c.categoryTags?.includes("vegetarian") || !c.name?.toLowerCase().includes("chicken"));
 
-      return {
-        id: meta?.menuItemId || c.id,
-        name: c.name || "Menu Item",
-        price: c.price || 0,
-        description: rec.explanation || "",
-        imageUrl: null,
-        restaurantName: selectedRestaurant?.name || meta?.restaurantName,
-        cuisine: selectedRestaurant?.cuisine,
-        isVegetarian: isVeg,
-        healthScore: undefined,
-      };
-    });
+        return {
+          id: meta?.menuItemId || c.id,
+          name: c.name!.trim(),
+          price: c.price || 0,
+          description:
+            (meta as any)?.description ||
+            (rec.explanation && rec.explanation !== "Available on Swiggy Food." ? rec.explanation : "") ||
+            "",
+          imageUrl: meta?.imageUrl || null,
+          restaurantName: selectedRestaurant?.name || meta?.restaurantName,
+          cuisine: selectedRestaurant?.cuisine,
+          isVegetarian: isVeg,
+          healthScore: undefined,
+        };
+      });
   }, [menuRecData, selectedRestaurant]);
 
   // Open restaurant sheet

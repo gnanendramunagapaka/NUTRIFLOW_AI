@@ -83,9 +83,11 @@ export function DineoutRestaurantCard({
               {restaurant.name}
             </h3>
           </div>
-          <p className="text-xs text-muted-foreground truncate">
-            {restaurant.cuisine}
-          </p>
+          {restaurant.cuisine ? (
+            <p className="text-xs text-muted-foreground truncate">
+              {restaurant.cuisine}
+            </p>
+          ) : null}
         </div>
 
         <div className="space-y-1.5 pt-1 border-t border-border/50 text-[11px] text-muted-foreground">
@@ -94,11 +96,7 @@ export function DineoutRestaurantCard({
               <span className="font-semibold text-foreground/90">
                 ₹{restaurant.costForTwo} for two
               </span>
-            ) : (
-              <span className="font-medium text-muted-foreground">
-                Dining
-              </span>
-            )}
+            ) : null}
             {restaurant.locality && (
               <span className="flex items-center gap-0.5 truncate max-w-[130px]">
                 <MapPin className="h-3 w-3 shrink-0" />

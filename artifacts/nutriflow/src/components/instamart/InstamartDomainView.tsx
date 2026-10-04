@@ -124,32 +124,34 @@ export function InstamartDomainView() {
   const liveProducts: InstamartProductData[] = useMemo(() => {
     if (!instamartData?.recommendations) return [];
 
-    return instamartData.recommendations.map((rec) => {
-      const c = rec.candidate;
-      const meta = c.sourceMetadata;
-      const mrp = meta?.mrp;
-      const price = c.price ?? mrp ?? 0;
-      const discountText =
-        mrp && price && mrp > price
-          ? `${Math.round(((mrp - price) / mrp) * 100)}% OFF`
-          : undefined;
+    return instamartData.recommendations
+      .filter((rec) => Boolean(rec.candidate.name && rec.candidate.name.trim().length > 0))
+      .map((rec) => {
+        const c = rec.candidate;
+        const meta = c.sourceMetadata;
+        const mrp = meta?.mrp;
+        const price = c.price ?? mrp ?? 0;
+        const discountText =
+          mrp && price && mrp > price
+            ? `${Math.round(((mrp - price) / mrp) * 100)}% OFF`
+            : undefined;
 
-      return {
-        id: meta?.productId || c.id,
-        name: c.name || "Pantry Item",
-        category: c.categoryTags?.[0] || "Grocery",
-        quantity: meta?.quantity || "",
-        unit: "",
-        price: mrp || price || 0,
-        discountPrice: (mrp && price && price < mrp) ? price : undefined,
-        discountText,
-        inStock: c.availability !== "unavailable",
-        rating: meta?.rating,
-        imageUrl: meta?.imageUrl, // Real Swiggy product image URL if provided
-        deliveryTime: undefined,
-        description: c.categoryTags?.join(", ") || "Fresh grocery item delivered via Swiggy Instamart",
-      };
-    });
+        return {
+          id: meta?.productId || c.id,
+          name: c.name!.trim(),
+          category: c.categoryTags?.[0] || "Grocery",
+          quantity: meta?.quantity || "",
+          unit: "",
+          price: mrp || price || 0,
+          discountPrice: (mrp && price && price < mrp) ? price : undefined,
+          discountText,
+          inStock: c.availability !== "unavailable",
+          rating: meta?.rating,
+          imageUrl: meta?.imageUrl, // Real Swiggy product image URL if provided
+          deliveryTime: undefined,
+          description: c.categoryTags?.join(", ") || "Fresh grocery item delivered via Swiggy Instamart",
+        };
+      });
   }, [instamartData]);
 
   const filteredProducts = useMemo(() => {

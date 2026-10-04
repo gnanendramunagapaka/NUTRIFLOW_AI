@@ -41,6 +41,8 @@ export const SwiggySourceMetadataSchema = z.object({
   distance: z.string().optional(),
   offers: z.array(z.string()).optional(),
   imageUrl: z.string().optional(),
+  category: z.string().optional(),
+  description: z.string().optional(),
 });
 
 export type SwiggySourceMetadata = z.infer<typeof SwiggySourceMetadataSchema>;
@@ -76,28 +78,65 @@ export interface RawSwiggyFoodRestaurant {
   veg?: boolean | number;
   tags?: string[];
   distance?: number | string;
+  imageUrl?: string;
+  image_url?: string;
+  image?: string;
+  images?: any;
+  imageId?: string;
+  image_id?: string;
+  cloudinaryImageId?: string;
 }
 
 export interface RawSwiggyFoodMenuItem {
   id?: string | number;
   item_id?: string | number;
+  itemId?: string | number;
+  dishId?: string | number;
+  dish_id?: string | number;
   name?: string;
+  item_name?: string;
+  itemName?: string;
+  display_name?: string;
+  displayName?: string;
+  title?: string;
+  dish_name?: string;
+  dishName?: string;
   restaurantId?: string | number;
   restaurant_id?: string | number;
   restaurantName?: string;
   restaurant_name?: string;
-  price?: number;
-  defaultPrice?: number;
+  price?: number | string;
+  defaultPrice?: number | string;
+  finalPrice?: number | string;
+  price_in_paise?: number | string;
+  priceInPaise?: number | string;
   isVeg?: boolean | number;
   is_veg?: boolean | number;
   veg?: boolean | number;
+  itemAttribute?: {
+    vegClassifier?: string;
+    portionAttribute?: string;
+  };
   inStock?: boolean | number;
   in_stock?: boolean | number;
+  isAvailable?: boolean;
+  available?: boolean;
   category?: string;
+  categoryName?: string;
   categoryTags?: string[];
   description?: string;
+  desc?: string;
   allergens?: string[];
   ingredients?: string[];
+  imageUrl?: string;
+  image_url?: string;
+  image?: string;
+  images?: any;
+  imageId?: string;
+  image_id?: string;
+  cloudinaryImageId?: string;
+  variants?: any;
+  addons?: any;
 }
 
 export interface RawSwiggyInstamartProduct {
@@ -106,9 +145,13 @@ export interface RawSwiggyInstamartProduct {
   product_id?: string | number;
   name?: string;
   display_name?: string;
+  displayName?: string;
   title?: string;
   product_name?: string;
   productName?: string;
+  product_title?: string;
+  item_name?: string;
+  itemName?: string;
   brand?: string;
   brand_name?: string;
   brandName?: string;
@@ -148,10 +191,13 @@ export interface RawSwiggyInstamartProduct {
   imageUrl?: string;
   image_url?: string;
   image?: string;
-  images?: string[] | string;
+  images?: any;
   imageId?: string;
   image_id?: string;
   cloudinaryImageId?: string;
+  media?: any;
+  thumbnail?: any;
+  variations?: any[];
 }
 
 export interface RawSwiggyDineoutRestaurant {
@@ -204,6 +250,7 @@ function parseNumber(val?: unknown): number | undefined {
 }
 
 function parseSwiggyImageUrl(val?: unknown): string | undefined {
+  if (!val) return undefined;
   if (typeof val === "string") {
     const trimmed = val.trim();
     if (!trimmed) return undefined;
@@ -213,7 +260,24 @@ function parseSwiggyImageUrl(val?: unknown): string | undefined {
     return `https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_288,h_288,c_fit/${trimmed}`;
   }
   if (Array.isArray(val) && val.length > 0) {
-    return parseSwiggyImageUrl(val[0]);
+    for (const item of val) {
+      const parsed = parseSwiggyImageUrl(item);
+      if (parsed) return parsed;
+    }
+    return undefined;
+  }
+  if (typeof val === "object" && val !== null) {
+    const obj = val as Record<string, unknown>;
+    const directUrl = obj.url ?? obj.imageUrl ?? obj.image_url;
+    if (typeof directUrl === "string") {
+      const parsed = parseSwiggyImageUrl(directUrl);
+      if (parsed) return parsed;
+    }
+    const idVal = obj.imageId ?? obj.image_id ?? obj.cloudinaryImageId ?? obj.id;
+    if (typeof idVal === "string") {
+      const parsed = parseSwiggyImageUrl(idVal);
+      if (parsed) return parsed;
+    }
   }
   return undefined;
 }
@@ -327,6 +391,15 @@ export function normalizeSwiggyFoodRestaurant(raw: RawSwiggyFoodRestaurant): Nor
     goalSignals: undefined,
   };
 
+  const rawImage =
+    raw.imageUrl ??
+    raw.cloudinaryImageId ??
+    raw.imageId ??
+    raw.image_id ??
+    raw.image ??
+    raw.images;
+  const imageUrl = parseSwiggyImageUrl(rawImage);
+
   const sourceMetadata: SwiggySourceMetadata = {
     source: "swiggy",
     domain: "food",
@@ -336,6 +409,7 @@ export function normalizeSwiggyFoodRestaurant(raw: RawSwiggyFoodRestaurant): Nor
     costForTwo,
     locality,
     distance,
+    imageUrl,
   };
 
   return NormalizedSwiggyCandidateSchema.parse({
@@ -360,24 +434,46 @@ export function normalizeSwiggyFoodMenuItem(raw: RawSwiggyFoodMenuItem): Normali
     throw new Error("Invalid raw Food menu item: expected object");
   }
 
-  const rawId = raw.id ?? raw.item_id;
+  const rawId = raw.id ?? raw.item_id ?? raw.itemId ?? raw.dishId ?? raw.dish_id;
   const idStr = rawId != null ? String(rawId).trim() : "";
   if (!idStr) {
     throw new Error("Invalid Food menu item: missing id");
   }
   const id = `food-item-${idStr}`;
 
-  const name = cleanString(raw.name) || "Menu Item";
+  const rawName =
+    raw.name ||
+    raw.item_name ||
+    raw.itemName ||
+    raw.display_name ||
+    raw.displayName ||
+    raw.title ||
+    raw.dish_name ||
+    raw.dishName;
+  const name = cleanString(rawName);
 
-  let price = parseNumber(raw.price ?? raw.defaultPrice);
-  if (price != null && price <= 0) {
-    price = undefined;
+  let price: number | undefined;
+  if (raw.price_in_paise != null) {
+    const p = parseNumber(raw.price_in_paise);
+    if (p != null) price = p / 100;
+  } else if (raw.priceInPaise != null) {
+    const p = parseNumber(raw.priceInPaise);
+    if (p != null) price = p / 100;
+  } else {
+    const rawNum = parseNumber(raw.price ?? raw.defaultPrice ?? raw.finalPrice);
+    if (rawNum != null && rawNum > 0) {
+      price = rawNum;
+    }
   }
 
-  const availability = parseAvailability(raw.inStock ?? raw.in_stock);
-  const { classification, tags: dietaryTags } = parseDietaryClassification(raw.isVeg ?? raw.is_veg ?? raw.veg);
+  let vegField = raw.isVeg ?? raw.is_veg ?? raw.veg;
+  if (vegField === undefined && raw.itemAttribute?.vegClassifier) {
+    vegField = raw.itemAttribute.vegClassifier.toUpperCase() === "VEG" ? 1 : 0;
+  }
+  const availability = parseAvailability(raw.inStock ?? raw.in_stock ?? raw.isAvailable ?? raw.available);
+  const { classification, tags: dietaryTags } = parseDietaryClassification(vegField);
 
-  const category = cleanString(raw.category);
+  const category = cleanString(raw.category ?? raw.categoryName);
   const categoryTags: string[] = [];
   if (category) categoryTags.push(category);
   if (Array.isArray(raw.categoryTags)) {
@@ -397,7 +493,7 @@ export function normalizeSwiggyFoodMenuItem(raw: RawSwiggyFoodMenuItem): Normali
 
   const safetyData: CandidateSafetyData = {
     id,
-    name,
+    name: name || undefined,
     domain: "food",
     dietaryClassification: classification,
     allergens: allergens && allergens.length > 0 ? allergens : undefined,
@@ -407,7 +503,7 @@ export function normalizeSwiggyFoodMenuItem(raw: RawSwiggyFoodMenuItem): Normali
 
   const matchData: CandidateMatchData = {
     id,
-    name,
+    name: name || undefined,
     cuisineTags: undefined,
     foodTags: ingredients && ingredients.length > 0 ? ingredients : undefined,
     dietaryTags,
@@ -419,17 +515,30 @@ export function normalizeSwiggyFoodMenuItem(raw: RawSwiggyFoodMenuItem): Normali
   const restaurantId = rawRestId != null ? String(rawRestId).trim() : undefined;
   const restaurantName = cleanString(raw.restaurantName ?? raw.restaurant_name);
 
+  const rawImage =
+    raw.imageUrl ??
+    raw.cloudinaryImageId ??
+    raw.imageId ??
+    raw.image_id ??
+    raw.image ??
+    raw.images;
+  const imageUrl = parseSwiggyImageUrl(rawImage);
+  const description = cleanString(raw.description ?? raw.desc);
+
   const sourceMetadata: SwiggySourceMetadata = {
     source: "swiggy",
     domain: "food",
     restaurantId,
     restaurantName,
     menuItemId: idStr,
+    imageUrl,
+    category,
+    description,
   };
 
   return NormalizedSwiggyCandidateSchema.parse({
     id,
-    name,
+    name: name || undefined,
     domain: "food",
     safetyData,
     matchData,
@@ -460,10 +569,16 @@ export function normalizeSwiggyInstamartProduct(raw: RawSwiggyInstamartProduct):
   const name = cleanString(
     raw.name ??
     raw.display_name ??
-    raw.title ??
+    raw.displayName ??
+    raw.item_name ??
+    raw.itemName ??
     raw.product_name ??
-    raw.productName
-  ) || "Grocery Item";
+    raw.productName ??
+    raw.title ??
+    raw.product_title ??
+    (raw.variations?.[0] as any)?.display_name ??
+    (raw.variations?.[0] as any)?.name
+  );
   const brand = cleanString(raw.brand ?? raw.brand_name ?? raw.brandName);
 
   // Price resolution: unpack nested price objects if present
@@ -528,7 +643,12 @@ export function normalizeSwiggyInstamartProduct(raw: RawSwiggyInstamartProduct):
     raw.images ??
     raw.imageId ??
     raw.image_id ??
-    raw.cloudinaryImageId;
+    raw.cloudinaryImageId ??
+    raw.media ??
+    raw.thumbnail ??
+    (raw.variations?.[0] as any)?.images ??
+    (raw.variations?.[0] as any)?.image ??
+    (raw.variations?.[0] as any)?.image_id;
   const imageUrl = parseSwiggyImageUrl(rawImage);
 
   const allergens = Array.isArray(raw.allergens)
