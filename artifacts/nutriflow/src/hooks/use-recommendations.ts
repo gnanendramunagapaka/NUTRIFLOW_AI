@@ -162,8 +162,8 @@ export function buildRecommendationPayload(
     if (effectiveAddressId) payload.addressId = effectiveAddressId;
   } else if (domain === "dineout") {
     // Dineout accepts locationId which maps to Swiggy addressId/locationId
-    // Do NOT force food/instamart effectiveAddressId into Dineout
-    if (options.locationId) payload.locationId = options.locationId;
+    const effectiveLocationId = options.locationId ?? effectiveAddressId;
+    if (effectiveLocationId) payload.locationId = effectiveLocationId;
   }
 
   return payload;

@@ -64,8 +64,8 @@ export function DineoutDomainView() {
 
       return {
         id: meta?.restaurantId || c.id,
-        name: c.name || "Dining Destination",
-        cuisine: c.categoryTags?.join(", ") || c.contextTags?.[0] || "Dining",
+        name: c.name || "",
+        cuisine: c.categoryTags?.join(", ") || c.contextTags?.[0] || "",
         rating: meta?.rating,
         costForTwo: meta?.costForTwo,
         locality: meta?.locality,
