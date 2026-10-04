@@ -188,8 +188,11 @@ export function resolveInitialAddress(
 
   // 2. If stored in session, restore it
   if (savedId) {
-    const matched = liveAddresses.find((a) => a.id === savedId);
-    if (matched) return matched;
+    const isDummy = savedId.toLowerCase() === "home" || savedId.toLowerCase() === "work" || savedId.toLowerCase() === "mock";
+    if (!isDummy) {
+      const matched = liveAddresses.find((a) => a.id === savedId);
+      if (matched) return matched;
+    }
   }
 
   // 3. Otherwise: do NOT silently pick one; require explicit user selection
@@ -207,7 +210,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [selectedAddress, setSelectedAddressState] = useState<Address | null>(() => {
     if (typeof window !== "undefined") {
       const savedId = sessionStorage.getItem("nutriflow_selected_address_id");
-      if (savedId) {
+      if (savedId && savedId !== "home" && savedId !== "work" && savedId !== "mock") {
         return { id: savedId, label: "Saved Location", address: "", icon: "MapPin" };
       }
     }
@@ -215,10 +218,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   });
 
   const setSelectedAddress = (addr: Address | null) => {
-    setSelectedAddressState(addr);
+    const isDummy = !addr?.id || addr.id === "home" || addr.id === "work" || addr.id === "mock";
+    const sanitized = isDummy ? null : addr;
+    setSelectedAddressState(sanitized);
     if (typeof window !== "undefined") {
-      if (addr?.id) {
-        sessionStorage.setItem("nutriflow_selected_address_id", addr.id);
+      if (sanitized?.id) {
+        sessionStorage.setItem("nutriflow_selected_address_id", sanitized.id);
       } else {
         sessionStorage.removeItem("nutriflow_selected_address_id");
       }

@@ -370,7 +370,20 @@ export default function Discover() {
           </div>
 
         {/* ─── 5. Loading / Error / Empty State ─── */}
-        {foodRecError ? (
+        {(!selectedAddress && addresses.length === 0) || Boolean(foodRecError?.message?.includes("No saved delivery addresses")) ? (
+          <AddressSelectionPrompt
+            domain="food"
+            availableAddresses={[]}
+            onSelectAddress={(addr) => setSelectedAddress(addr)}
+          />
+        ) : (foodRecData?.clarificationNeeded || (!selectedAddress && (foodRecData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
+          <AddressSelectionPrompt
+            domain="food"
+            availableAddresses={foodRecData?.availableAddresses || addresses}
+            selectedAddressId={selectedAddress?.id}
+            onSelectAddress={(addr) => setSelectedAddress(addr)}
+          />
+        ) : foodRecError ? (
           <AppCard className="p-8 sm:p-12 text-center space-y-4">
             <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
               <Utensils className="h-6 w-6" />
@@ -401,13 +414,6 @@ export default function Discover() {
               </div>
             </div>
           </div>
-        ) : (foodRecData?.clarificationNeeded || (!selectedAddress && (foodRecData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
-          <AddressSelectionPrompt
-            domain="food"
-            availableAddresses={foodRecData?.availableAddresses || addresses}
-            selectedAddressId={selectedAddress?.id}
-            onSelectAddress={(addr) => setSelectedAddress(addr)}
-          />
         ) : !hasAnyResults ? (
           /* ─── 6. Empty State ─── */
           <AppCard className="p-8 sm:p-12 text-center space-y-4">

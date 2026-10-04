@@ -154,9 +154,13 @@ function buildPayloadSimulation(
   options: { query?: string; addressId?: string; locationId?: string; mode?: string } = {},
   selectedAddress?: { id: string } | null
 ): Record<string, unknown> {
-  const isDummyAddress = !selectedAddress?.id || selectedAddress.id === "home" || selectedAddress.id === "work";
-  const defaultAddressId = !isDummyAddress ? selectedAddress?.id : undefined;
-  const effectiveAddressId = options.addressId ?? defaultAddressId;
+  const rawAddressId = options.addressId ?? selectedAddress?.id;
+  const isDummyAddress =
+    !rawAddressId ||
+    rawAddressId.toLowerCase() === "home" ||
+    rawAddressId.toLowerCase() === "work" ||
+    rawAddressId.toLowerCase() === "mock";
+  const effectiveAddressId = !isDummyAddress ? rawAddressId : undefined;
 
   const payload: Record<string, unknown> = {};
   if (options.query) payload.query = options.query;
@@ -182,11 +186,11 @@ assert(dashboardContent.includes("AddressSelectionPrompt"), "Dashboard.tsx must 
 assert(instamartContent.includes("AddressSelectionPrompt"), "InstamartDomainView.tsx must render AddressSelectionPrompt");
 
 // Check condition triggers clarification prompt when no address is selected and multiple exist
-assert(discoverContent.includes("foodRecData?.clarificationNeeded || (!selectedAddress &&"),
+assert(discoverContent.includes("clarificationNeeded") && discoverContent.includes("!selectedAddress"),
   "Discover.tsx must trigger prompt on clarificationNeeded or multiple unselected addresses");
-assert(dashboardContent.includes("foodRecData?.clarificationNeeded || (!selectedAddress &&"),
+assert(dashboardContent.includes("clarificationNeeded") && dashboardContent.includes("!selectedAddress"),
   "Dashboard.tsx must trigger prompt on clarificationNeeded or multiple unselected addresses");
-assert(instamartContent.includes("instamartData?.clarificationNeeded || (!selectedAddress &&"),
+assert(instamartContent.includes("clarificationNeeded") && instamartContent.includes("!selectedAddress"),
   "InstamartDomainView.tsx must trigger prompt on clarificationNeeded or multiple unselected addresses");
 
 // Behavioral check:
@@ -256,17 +260,24 @@ console.log("  ✓ Zero addresses handled safely across context, prompt UI, and 
 
 // ─── Test 13 (Requirement f): Placeholder 'home'/'work' IDs are never sent ───
 console.log("Test 13 (Requirement f): Placeholder 'home'/'work' IDs are never sent as Swiggy address IDs");
-assert(hookContent.includes('selectedAddress.id === "home" || selectedAddress.id === "work"'),
-  "use-recommendations.ts must strictly filter out dummy 'home'/'work' IDs");
+assert(hookContent.includes('rawAddressId.toLowerCase() === "home" ||'),
+  "use-recommendations.ts must strictly filter out dummy 'home'/'work'/'mock' IDs");
 assert(cartContent.includes("DEFAULT_ADDRESSES: Address[] = []"),
   "use-cart.tsx DEFAULT_ADDRESSES must be empty array, never dummy placeholder IDs");
 
-// Test dummy filter on Food
+// Test dummy filter on Food via selectedAddress
 const foodPayloadWithDummyHome = buildPayloadSimulation("food", {}, { id: "home" });
 assert.strictEqual(foodPayloadWithDummyHome.addressId, undefined, "Dummy 'home' ID must NEVER be sent to Food");
 
 const foodPayloadWithDummyWork = buildPayloadSimulation("food", {}, { id: "work" });
 assert.strictEqual(foodPayloadWithDummyWork.addressId, undefined, "Dummy 'work' ID must NEVER be sent to Food");
+
+// Test dummy filter on options.addressId override directly
+const foodPayloadWithOptionDummyHome = buildPayloadSimulation("food", { addressId: "home" }, { id: "swiggy_real_addr_999" });
+assert.strictEqual(foodPayloadWithOptionDummyHome.addressId, undefined, "Dummy 'home' passed via options.addressId must be rejected");
+
+const foodPayloadWithOptionDummyWorkCase = buildPayloadSimulation("food", { addressId: "WORK" }, null);
+assert.strictEqual(foodPayloadWithOptionDummyWorkCase.addressId, undefined, "Case-insensitive dummy 'WORK' passed via options.addressId must be rejected");
 
 // Test dummy filter on Instamart
 const instamartPayloadWithDummyHome = buildPayloadSimulation("instamart", {}, { id: "home" });
@@ -274,7 +285,14 @@ assert.strictEqual(instamartPayloadWithDummyHome.addressId, undefined, "Dummy 'h
 
 const instamartPayloadWithDummyWork = buildPayloadSimulation("instamart", {}, { id: "work" });
 assert.strictEqual(instamartPayloadWithDummyWork.addressId, undefined, "Dummy 'work' ID must NEVER be sent to Instamart");
-console.log("  ✓ Dummy 'home' and 'work' placeholder IDs are strictly blocked from Swiggy recommendation payloads");
+
+// Test session restoration rejects dummy values
+const restoredDummyHome = resolveInitialAddressSimulation([addrA, addrB], null, "home");
+assert.strictEqual(restoredDummyHome, null, "Dummy 'home' in session must never be restored as active address");
+
+const restoredDummyWork = resolveInitialAddressSimulation([addrA, addrB], null, "work");
+assert.strictEqual(restoredDummyWork, null, "Dummy 'work' in session must never be restored as active address");
+console.log("  ✓ Dummy 'home' and 'work' placeholder IDs are strictly blocked across options, context, and session");
 
 // ─── Test 14 (Requirement g): Existing Dineout behavior remains unaffected ───
 console.log("Test 14 (Requirement g): Existing Dineout behavior remains unaffected");
@@ -299,7 +317,24 @@ assert(topBarContent.includes("Delivery location selector") && topBarContent.inc
   "TopBar must include Swiggy delivery location dropdown with attribution");
 console.log("  ✓ Attribution and TopBar location switcher verified");
 
+// ─── Test 16: Zero-Address & Clarification States Prevent Mock Fallback ──────
+console.log("Test 16: Zero-address & clarification states prevent mock fallback");
+const freshInstamartContent = fs.readFileSync(instamartPath, "utf-8");
+const freshDiscoverContent = fs.readFileSync(discoverPath, "utf-8");
+const freshDashboardContent = fs.readFileSync(dashboardPath, "utf-8");
+
+assert(freshInstamartContent.includes("isNoSavedAddress"), "InstamartDomainView must compute isNoSavedAddress");
+assert(freshInstamartContent.includes("isClarificationNeeded"), "InstamartDomainView must compute isClarificationNeeded");
+assert(freshInstamartContent.includes("!isNoSavedAddress &&") && freshInstamartContent.includes("!isClarificationNeeded &&"),
+  "InstamartDomainView must NOT trigger isUsingFallback during zero-address or clarification state");
+
+assert(freshDiscoverContent.includes("No saved delivery addresses"),
+  "Discover.tsx must recognize zero-address error and render controlled state");
+assert(freshDashboardContent.includes("No saved delivery addresses"),
+  "Dashboard.tsx must recognize zero-address error and render controlled state");
+console.log("  ✓ Zero-address & clarification flows strictly prevent mock data fallbacks");
+
 console.log("\n==================================================================");
-console.log("🎉 ALL 15 FRONTEND LIVE-DATA & EXPLICIT ADDRESS TESTS PASSED!");
+console.log("🎉 ALL 16 FRONTEND LIVE-DATA & ADDRESS FALLBACK CLEANUP TESTS PASSED!");
 console.log("==================================================================\n");
 

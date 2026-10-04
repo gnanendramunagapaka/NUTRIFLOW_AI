@@ -446,6 +446,18 @@ export default function Dashboard() {
                     <Skeleton key={i} className="h-64 rounded-2xl" />
                   ))}
                 </div>
+              ) : (!selectedAddress && addresses.length === 0) || Boolean(recError?.message?.includes("No saved delivery addresses")) ? (
+                <AppCard className="p-8 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">
+                    <Utensils className="h-6 w-6" />
+                  </div>
+                  <h4 className="text-sm font-bold text-foreground">
+                    No Saved Delivery Address
+                  </h4>
+                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                    Add a delivery address to your Swiggy account to discover nearby restaurants and receive live recommendations.
+                  </p>
+                </AppCard>
               ) : recError ? (
                 <AppCard className="p-8 text-center space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">

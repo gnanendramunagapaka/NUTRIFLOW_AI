@@ -153,8 +153,21 @@ export function InstamartDomainView() {
     });
   }, [instamartData]);
 
-  // If live API strictly fails with network/server error, allow fallback to MOCK_INSTAMART_GROCERIES
-  const isUsingFallback = Boolean(catalogError && (!instamartData || !instamartData.recommendations));
+  const isNoSavedAddress =
+    (!selectedAddress && addresses.length === 0) ||
+    Boolean(catalogError?.message?.includes("No saved delivery addresses"));
+
+  const isClarificationNeeded =
+    Boolean(instamartData?.clarificationNeeded) ||
+    (!selectedAddress && (instamartData?.availableAddresses?.length ?? addresses.length) > 1);
+
+  // If live API strictly fails with network/server error (and not zero-address/clarification flow), allow fallback to MOCK_INSTAMART_GROCERIES
+  const isUsingFallback = Boolean(
+    catalogError &&
+    !isNoSavedAddress &&
+    !isClarificationNeeded &&
+    (!instamartData || !instamartData.recommendations)
+  );
   const filteredProducts = isUsingFallback
     ? MOCK_INSTAMART_GROCERIES.map((p) => ({
         id: p.id,
@@ -366,6 +379,19 @@ export function InstamartDomainView() {
                 ))}
               </div>
             </div>
+          ) : isNoSavedAddress ? (
+            <AddressSelectionPrompt
+              domain="instamart"
+              availableAddresses={[]}
+              onSelectAddress={(addr) => setSelectedAddress(addr)}
+            />
+          ) : isClarificationNeeded ? (
+            <AddressSelectionPrompt
+              domain="instamart"
+              availableAddresses={instamartData?.availableAddresses || addresses}
+              selectedAddressId={selectedAddress?.id}
+              onSelectAddress={(addr) => setSelectedAddress(addr)}
+            />
           ) : catalogError && !isUsingFallback ? (
             <AppCard className="p-8 sm:p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
@@ -384,13 +410,6 @@ export function InstamartDomainView() {
                 <span>Retry</span>
               </SecondaryButton>
             </AppCard>
-          ) : (instamartData?.clarificationNeeded || (!selectedAddress && (instamartData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
-            <AddressSelectionPrompt
-              domain="instamart"
-              availableAddresses={instamartData?.availableAddresses || addresses}
-              selectedAddressId={selectedAddress?.id}
-              onSelectAddress={(addr) => setSelectedAddress(addr)}
-            />
           ) : filteredProducts.length === 0 ? (
             <AppCard className="p-8 sm:p-12 text-center space-y-3">
               <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mx-auto text-muted-foreground">

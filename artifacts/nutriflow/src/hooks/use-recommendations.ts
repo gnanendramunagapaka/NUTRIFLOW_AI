@@ -138,10 +138,14 @@ export function buildRecommendationPayload(
   selectedAddress?: Address | null
 ): Record<string, unknown> {
   // Determine effective real address ID
-  // Placeholder IDs ("home", "work") must NEVER be sent as Swiggy address IDs
-  const isDummyAddress = !selectedAddress?.id || selectedAddress.id === "home" || selectedAddress.id === "work";
-  const defaultAddressId = !isDummyAddress ? selectedAddress?.id : undefined;
-  const effectiveAddressId = options.addressId ?? defaultAddressId;
+  // Placeholder IDs ("home", "work", "mock") must NEVER be sent as Swiggy address IDs
+  const rawAddressId = options.addressId ?? selectedAddress?.id;
+  const isDummyAddress =
+    !rawAddressId ||
+    rawAddressId.toLowerCase() === "home" ||
+    rawAddressId.toLowerCase() === "work" ||
+    rawAddressId.toLowerCase() === "mock";
+  const effectiveAddressId = !isDummyAddress ? rawAddressId : undefined;
 
   // Build the request payload according to domain contract
   const payload: Record<string, unknown> = {};
