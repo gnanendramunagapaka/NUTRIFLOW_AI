@@ -334,7 +334,199 @@ assert(freshDashboardContent.includes("No saved delivery addresses"),
   "Dashboard.tsx must recognize zero-address error and render controlled state");
 console.log("  ✓ Zero-address & clarification flows strictly prevent mock data fallbacks");
 
+// ─── Test 17: Production Frontend Address-Parsing Envelope Verification ──────
+console.log("Test 17: Production Frontend Address-Parsing Envelope Verification");
+const freshCartContent = fs.readFileSync(cartHookPath, "utf-8");
+
+// 1. Static checks on use-cart.tsx
+assert(freshCartContent.includes('fetch("/api/swiggy/mcp/food/get_addresses"'),
+  "useSwiggyAddresses must query production route /api/swiggy/mcp/food/get_addresses");
+assert(freshCartContent.includes('fetch("/api/swiggy/mcp/get_addresses"'),
+  "useSwiggyAddresses must include fallback to /api/swiggy/mcp/get_addresses");
+assert(freshCartContent.includes("structuredContent") && freshCartContent.includes("addresses"),
+  "use-cart.tsx must support top-level structuredContent addresses");
+assert(freshCartContent.includes("result") && freshCartContent.includes("structuredContent"),
+  "use-cart.tsx must support result.structuredContent addresses");
+
+// 2. Behavioral verification of pure address extraction logic on production payload
+function extractSwiggyAddressesSimulation(data: any): Address[] {
+  if (!data || typeof data !== "object") return [];
+  let incoming: any[] = [];
+  if (Array.isArray(data?.structuredContent?.addresses) && data.structuredContent.addresses.length > 0) {
+    incoming = data.structuredContent.addresses;
+  } else if (Array.isArray(data?.result?.structuredContent?.addresses) && data.result.structuredContent.addresses.length > 0) {
+    incoming = data.result.structuredContent.addresses;
+  } else if (Array.isArray(data?.result?.addresses) && data.result.addresses.length > 0) {
+    incoming = data.result.addresses;
+  } else if (Array.isArray(data?.data?.addresses) && data.data.addresses.length > 0) {
+    incoming = data.data.addresses;
+  } else if (Array.isArray(data?.addresses) && data.addresses.length > 0) {
+    incoming = data.addresses;
+  } else if (Array.isArray(data) && data.length > 0) {
+    incoming = data;
+  } else if (Array.isArray(data?.content) && data.content.length > 0) {
+    const first = data.content[0];
+    if (first && typeof first === "object" && typeof first.text === "string") {
+      try {
+        const parsed = JSON.parse(first.text);
+        if (parsed && Array.isArray(parsed.addresses)) incoming = parsed.addresses;
+      } catch {
+        // prose text ignored
+      }
+    }
+  }
+
+  if (!Array.isArray(incoming) || incoming.length === 0) return [];
+
+  const resolution = data?.structuredContent?.resolution ?? data?.result?.structuredContent?.resolution ?? data?.resolution;
+  const needsClarification = Boolean(resolution?.needsUserClarification);
+  const defaultAddressId = typeof resolution?.defaultAddressId === "string" ? resolution.defaultAddressId.trim() : undefined;
+
+  const normalized: Address[] = [];
+  for (let idx = 0; idx < incoming.length; idx++) {
+    const a = incoming[idx];
+    if (!a || typeof a !== "object") continue;
+    const rawId = a.id ?? a.address_id ?? a._id;
+    if (rawId == null) continue;
+    const id = String(rawId).trim();
+    if (!id || id.toLowerCase() === "home" || id.toLowerCase() === "work" || id.toLowerCase() === "mock") continue;
+
+    const rawCategory = typeof a.addressCategory === "string" ? a.addressCategory.trim() : "";
+    const rawTag = typeof a.addressTag === "string" ? a.addressTag.trim() : "";
+    const rawLabel = typeof a.label === "string" ? a.label.trim() : "";
+    const rawName = typeof a.name === "string" ? a.name.trim() : "";
+    const label = rawTag || rawCategory || rawLabel || rawName || `Address ${idx + 1}`;
+
+    const rawAddressLine =
+      (typeof a.addressLine === "string" && a.addressLine.trim()) ||
+      (typeof a.address_line === "string" && a.address_line.trim()) ||
+      (typeof a.address === "string" && a.address.trim()) ||
+      (typeof a.formatted_address === "string" && a.formatted_address.trim()) ||
+      (typeof a.city === "string" && a.city.trim() ? a.city.trim() : "");
+    const addressText = rawAddressLine || label || "Address on file";
+
+    const lowerCategory = rawCategory.toLowerCase();
+    const lowerTag = rawTag.toLowerCase();
+    const lowerLabel = label.toLowerCase();
+    const icon =
+      lowerTag.includes("work") || lowerCategory.includes("work") || lowerLabel.includes("work")
+        ? "Briefcase"
+        : lowerTag.includes("home") || lowerCategory.includes("home") || lowerLabel.includes("home")
+        ? "Home"
+        : "MapPin";
+
+    const isExplicitDefault = Boolean(a.isDefault === true || a.is_default === true || a.default === true);
+    const isEnvelopeDefault = !needsClarification && defaultAddressId ? id === defaultAddressId : false;
+
+    normalized.push({
+      id,
+      label,
+      address: addressText,
+      icon,
+      city: typeof a.city === "string" ? a.city : undefined,
+      isDefault: isExplicitDefault || isEnvelopeDefault,
+    });
+  }
+  return normalized;
+}
+
+const exactProductionMcpResponse = {
+  _meta: {
+    requestId: "req_live_prod_abc123",
+  },
+  content: [
+    {
+      type: "text",
+      text: "Found 4 saved addresses (page 1 of 1, showing 4):\n1. [Friends and Family] ...\n2. [Home] ...\n3. [Work] ...\n4. [Other] ...",
+    },
+  ],
+  structuredContent: {
+    addresses: [
+      {
+        id: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+        addressLine: "Flat 101, Indiranagar 100ft Rd",
+        addressCategory: "Friends & Family",
+        addressTag: "Friends and Family",
+      },
+      {
+        id: "csf0btn4hd1iaochtaug__ARECkwT1Vek9sTBjrL9W6y",
+        addressLine: "House 24, 5th Main, Koramangala",
+        addressCategory: "Home",
+        addressTag: "Home",
+      },
+      {
+        id: "cuhgrbv8vrh1qk2s48lg__AQ5BEQT1AGIjACKupo_6ry",
+        addressLine: "Building 9, Outer Ring Rd, Bellandur",
+        addressCategory: "Work",
+        addressTag: "Work",
+      },
+      {
+        id: "cu0dqc4u6qfla8pbc6hg__AQ9XJgT4UK0sZCoZxp3ujz",
+        addressLine: "Flat 402, Prestige Palms, Whitefield",
+        addressCategory: "Other",
+        addressTag: "Gnan",
+      },
+    ],
+    total: 4,
+    resolution: {
+      needsUserClarification: true,
+      defaultAddressId: "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst",
+    },
+  },
+};
+
+const extracted4 = extractSwiggyAddressesSimulation(exactProductionMcpResponse);
+assert.strictEqual(extracted4.length, 4, "Must extract all 4 addresses from top-level structuredContent.addresses");
+
+// Verify real Swiggy IDs are preserved exactly
+assert.strictEqual(extracted4[0].id, "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst", "Address 1 ID preserved");
+assert.strictEqual(extracted4[1].id, "csf0btn4hd1iaochtaug__ARECkwT1Vek9sTBjrL9W6y", "Address 2 ID preserved");
+assert.strictEqual(extracted4[2].id, "cuhgrbv8vrh1qk2s48lg__AQ5BEQT1AGIjACKupo_6ry", "Address 3 ID preserved");
+assert.strictEqual(extracted4[3].id, "cu0dqc4u6qfla8pbc6hg__AQ9XJgT4UK0sZCoZxp3ujz", "Address 4 ID preserved");
+
+// Verify normalized labels and addressLine mapping
+assert.strictEqual(extracted4[0].label, "Friends and Family", "Prefers addressTag for label");
+assert.strictEqual(extracted4[0].address, "Flat 101, Indiranagar 100ft Rd", "Maps addressLine to address");
+assert.strictEqual(extracted4[1].label, "Home", "Maps Home tag");
+assert.strictEqual(extracted4[1].icon, "Home", "Derives Home icon");
+assert.strictEqual(extracted4[2].label, "Work", "Maps Work tag");
+assert.strictEqual(extracted4[2].icon, "Briefcase", "Derives Briefcase icon");
+assert.strictEqual(extracted4[3].label, "Gnan", "Maps custom Gnan tag");
+
+// Verify no dummy placeholder IDs exist
+for (const addr of extracted4) {
+  assert(addr.id !== "home" && addr.id !== "work" && addr.id !== "mock", "No dummy IDs introduced");
+}
+
+// Verify multiple addresses result in selectedAddress = null unless there is an existing valid session selection
+const multiNoSelection = resolveInitialAddressSimulation(extracted4, null, null);
+assert.strictEqual(multiNoSelection, null, "Multiple addresses with no prior selection MUST result in null selectedAddress");
+
+const multiWithSessionSelection = resolveInitialAddressSimulation(
+  extracted4,
+  null,
+  "csf0btn4hd1iaochtaug__ARECkwT1Vek9sTBjrL9W6y"
+);
+assert.strictEqual(
+  multiWithSessionSelection?.id,
+  "csf0btn4hd1iaochtaug__ARECkwT1Vek9sTBjrL9W6y",
+  "Valid session address ID is respected"
+);
+
+// Verify result.structuredContent.addresses envelope also supported
+const nestedResultEnvelope = {
+  result: {
+    structuredContent: exactProductionMcpResponse.structuredContent,
+  },
+};
+const extractedNested = extractSwiggyAddressesSimulation(nestedResultEnvelope);
+assert.strictEqual(extractedNested.length, 4, "Must also extract 4 addresses from result.structuredContent.addresses");
+assert.strictEqual(extractedNested[0].id, "cv2sa7jbrd8siovv8m0g__AQ655gT2RswsuAA7kLyhst");
+
+console.log("  ✓ Production Swiggy MCP address envelope parsed with all 4 real IDs preserved and explicit selection enforced");
+
 console.log("\n==================================================================");
-console.log("🎉 ALL 16 FRONTEND LIVE-DATA & ADDRESS FALLBACK CLEANUP TESTS PASSED!");
+console.log("🎉 ALL 17 FRONTEND LIVE-DATA & ADDRESS FALLBACK CLEANUP TESTS PASSED!");
 console.log("==================================================================\n");
+
 

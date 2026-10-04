@@ -32,6 +32,150 @@ export interface Address {
 
 export const DEFAULT_ADDRESSES: Address[] = [];
 
+/**
+ * Normalizes live Swiggy addresses from raw API/MCP responses.
+ * Strict rules:
+ * 1. Prefer top-level response.structuredContent.addresses when it is a non-empty array.
+ * 2. Also support result.structuredContent.addresses if that shape is used elsewhere.
+ * 3. Preserve existing supported response shapes (result.addresses, data.addresses, direct array, etc.).
+ * 4. Normalize each address using real fields: id, addressLine, addressCategory, addressTag.
+ * 5. Never parse prose text as the primary source when structuredContent.addresses is available.
+ * 6. Never hardcode address IDs or use placeholder IDs ('home', 'work', 'mock').
+ */
+export function extractFrontendSwiggyAddresses(data: unknown): Address[] {
+  if (!data || typeof data !== "object") return [];
+
+  const obj = data as Record<string, unknown>;
+  let incoming: any[] = [];
+
+  // 1. Prefer top-level response.structuredContent.addresses when it is a non-empty array
+  if (
+    obj.structuredContent &&
+    typeof obj.structuredContent === "object" &&
+    Array.isArray((obj.structuredContent as any).addresses) &&
+    (obj.structuredContent as any).addresses.length > 0
+  ) {
+    incoming = (obj.structuredContent as any).addresses;
+  }
+  // 2. Also support result.structuredContent.addresses if that shape is used elsewhere
+  else if (
+    obj.result &&
+    typeof obj.result === "object" &&
+    (obj.result as any).structuredContent &&
+    typeof (obj.result as any).structuredContent === "object" &&
+    Array.isArray((obj.result as any).structuredContent.addresses) &&
+    (obj.result as any).structuredContent.addresses.length > 0
+  ) {
+    incoming = (obj.result as any).structuredContent.addresses;
+  }
+  // 3. Preserve existing supported response shapes that are already intentionally handled
+  else if (obj.result && typeof obj.result === "object" && Array.isArray((obj.result as any).addresses) && (obj.result as any).addresses.length > 0) {
+    incoming = (obj.result as any).addresses;
+  } else if (obj.data && typeof obj.data === "object" && Array.isArray((obj.data as any).addresses) && (obj.data as any).addresses.length > 0) {
+    incoming = (obj.data as any).addresses;
+  } else if (Array.isArray(obj.addresses) && obj.addresses.length > 0) {
+    incoming = obj.addresses;
+  } else if (Array.isArray(data) && (data as any[]).length > 0) {
+    incoming = data as any[];
+  } else if (obj.data && Array.isArray(obj.data) && (obj.data as any[]).length > 0) {
+    incoming = obj.data as any[];
+  }
+  // 5. Fallback: only if no structured addresses found anywhere, check for JSON content text (never parse prose)
+  else if (Array.isArray(obj.content) && obj.content.length > 0) {
+    const first = obj.content[0];
+    if (first && typeof first === "object" && typeof (first as any).text === "string") {
+      try {
+        const parsed = JSON.parse((first as any).text);
+        if (parsed && typeof parsed === "object") {
+          if (Array.isArray(parsed.addresses) && parsed.addresses.length > 0) {
+            incoming = parsed.addresses;
+          } else if (Array.isArray(parsed) && parsed.length > 0) {
+            incoming = parsed;
+          }
+        }
+      } catch {
+        // Content text is prose markdown (e.g. "Found 4 saved addresses..."), ignore it.
+      }
+    }
+  }
+
+  if (!Array.isArray(incoming) || incoming.length === 0) return [];
+
+  // Resolution handling:
+  // Check top-level or result resolution
+  const resolution =
+    (obj.structuredContent as any)?.resolution ??
+    (obj.result as any)?.structuredContent?.resolution ??
+    obj.resolution ??
+    (obj.result as any)?.resolution;
+  const needsClarification = Boolean(resolution?.needsUserClarification);
+  const defaultAddressId = typeof resolution?.defaultAddressId === "string" ? resolution.defaultAddressId.trim() : undefined;
+
+  // Normalize each address using real fields: id, addressLine, addressCategory, addressTag
+  const normalized: Address[] = [];
+  for (let idx = 0; idx < incoming.length; idx++) {
+    const a = incoming[idx];
+    if (!a || typeof a !== "object") continue;
+
+    const rawId = a.id ?? a.address_id ?? a._id;
+    if (rawId == null) continue;
+    const id = String(rawId).trim();
+    if (!id) continue;
+
+    // Never accept dummy placeholder IDs
+    const lowerId = id.toLowerCase();
+    if (lowerId === "home" || lowerId === "work" || lowerId === "mock") continue;
+
+    const rawCategory = typeof a.addressCategory === "string" ? a.addressCategory.trim() : "";
+    const rawTag = typeof a.addressTag === "string" ? a.addressTag.trim() : "";
+    const rawLabel = typeof a.label === "string" ? a.label.trim() : "";
+    const rawName = typeof a.name === "string" ? a.name.trim() : "";
+
+    // Label preference: addressTag > addressCategory > label > name
+    const label = rawTag || rawCategory || rawLabel || rawName || `Address ${idx + 1}`;
+
+    const rawAddressLine =
+      (typeof a.addressLine === "string" && a.addressLine.trim()) ||
+      (typeof a.address_line === "string" && a.address_line.trim()) ||
+      (typeof a.address === "string" && a.address.trim()) ||
+      (typeof a.formatted_address === "string" && a.formatted_address.trim()) ||
+      (typeof a.city === "string" && a.city.trim() ? a.city.trim() : "");
+    const addressText = rawAddressLine || label || "Address on file";
+
+    // Icon derivation from addressCategory and addressTag
+    const lowerCategory = rawCategory.toLowerCase();
+    const lowerTag = rawTag.toLowerCase();
+    const lowerLabel = label.toLowerCase();
+    const icon =
+      lowerTag.includes("work") || lowerCategory.includes("work") || lowerLabel.includes("work")
+        ? "Briefcase"
+        : lowerTag.includes("home") || lowerCategory.includes("home") || lowerLabel.includes("home")
+        ? "Home"
+        : "MapPin";
+
+    const isExplicitDefault = Boolean(
+      a.isDefault === true ||
+      a.is_default === true ||
+      a.default === true ||
+      a.is_default === 1 ||
+      a.default === 1
+    );
+    const isEnvelopeDefault = !needsClarification && defaultAddressId ? id === defaultAddressId : false;
+    const isDefault = isExplicitDefault || isEnvelopeDefault;
+
+    normalized.push({
+      id,
+      label,
+      address: addressText,
+      icon,
+      city: typeof a.city === "string" ? a.city.trim() : undefined,
+      isDefault,
+    });
+  }
+
+  return normalized;
+}
+
 export function useSwiggyAddresses() {
   const { user } = useAuth();
 
@@ -43,87 +187,34 @@ export function useSwiggyAddresses() {
         return [];
       }
 
-      const res = await fetch("/api/swiggy/mcp/get_addresses", {
+      // Try primary production tool route first, fallback to legacy proxy route if needed
+      let res = await fetch("/api/swiggy/mcp/food/get_addresses", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         credentials: "include",
         body: JSON.stringify({}),
-      });
+      }).catch(() => null);
 
-      if (!res.ok) {
+      if (!res || !res.ok) {
+        res = await fetch("/api/swiggy/mcp/get_addresses", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({}),
+        }).catch(() => null);
+      }
+
+      if (!res || !res.ok) {
         console.warn("Failed to fetch live Swiggy addresses.");
         return [];
       }
 
       const data = await res.json().catch(() => null);
-      let incoming: any[] = [];
-      if (Array.isArray(data?.structuredContent?.addresses)) {
-        incoming = data.structuredContent.addresses;
-      } else if (Array.isArray(data?.result?.structuredContent?.addresses)) {
-        incoming = data.result.structuredContent.addresses;
-      } else if (Array.isArray(data?.result?.addresses)) {
-        incoming = data.result.addresses;
-      } else if (Array.isArray(data?.data?.addresses)) {
-        incoming = data.data.addresses;
-      } else if (Array.isArray(data?.addresses)) {
-        incoming = data.addresses;
-      } else if (Array.isArray(data)) {
-        incoming = data;
-      }
-
-      if (!Array.isArray(incoming) || incoming.length === 0) return [];
-
-      // Normalize Swiggy address shape strictly preserving real Swiggy IDs
-      const normalized: Address[] = [];
-      for (let idx = 0; idx < incoming.length; idx++) {
-        const a = incoming[idx];
-        if (!a || typeof a !== "object") continue;
-        const rawId = a.id ?? a.address_id ?? a._id;
-        if (rawId == null) continue;
-        const id = String(rawId).trim();
-        if (!id) continue;
-
-        const label = String(
-          a.addressTag ??
-          a.addressCategory ??
-          a.label ??
-          a.name ??
-          (a.isDefault ? "Home" : `Address ${idx + 1}`)
-        ).trim();
-
-        const addressText = String(
-          a.addressLine ??
-          a.address_line ??
-          a.address ??
-          a.formatted_address ??
-          `${a.city ?? ""} ${a.address ?? ""}`
-        ).trim();
-
-        const isDefault = Boolean(
-          a.isDefault === true ||
-          a.is_default === true ||
-          a.default === true
-        );
-
-        const icon = label.toLowerCase().includes("work")
-          ? "Briefcase"
-          : label.toLowerCase().includes("home")
-          ? "Home"
-          : "MapPin";
-
-        normalized.push({
-          id,
-          label,
-          address: addressText,
-          icon,
-          city: typeof a.city === "string" ? a.city : undefined,
-          isDefault,
-        });
-      }
-
-      return normalized;
+      return extractFrontendSwiggyAddresses(data);
     },
     enabled: Boolean(user),
     staleTime: 10 * 60 * 1000, 
