@@ -84,8 +84,8 @@ export function FoodRecommendationCard({
       </div>
 
       {/* Nutrition Summary Grid */}
-      {(data.calories !== undefined || data.protein !== undefined || data.healthScore !== undefined) && (
-        <div className="grid grid-cols-3 gap-2 bg-muted/40 p-2.5 rounded-xl text-center text-xs">
+      {(data.calories !== undefined || data.protein !== undefined) && (
+        <div className="grid grid-cols-2 gap-2 bg-muted/40 p-2.5 rounded-xl text-center text-xs">
           {data.calories !== undefined && (
             <div>
               <span className="text-[10px] text-muted-foreground block font-medium">Calories</span>
@@ -96,12 +96,6 @@ export function FoodRecommendationCard({
             <div>
               <span className="text-[10px] text-muted-foreground block font-medium">Protein</span>
               <span className="font-bold text-foreground">{data.protein}g</span>
-            </div>
-          )}
-          {data.healthScore !== undefined && (
-            <div>
-              <span className="text-[10px] text-muted-foreground block font-medium">Health</span>
-              <span className="font-bold text-emerald-600 dark:text-emerald-400">{data.healthScore}/10</span>
             </div>
           )}
         </div>

@@ -49,77 +49,118 @@ export type InstamartRecommendationResponse = z.infer<typeof InstamartRecommenda
 export function extractInstamartProductsFromMcp(data: unknown): RawSwiggyInstamartProduct[] {
   if (!data) return [];
 
-  let list: unknown[] = [];
+  const rawList: unknown[] = [];
 
-  if (Array.isArray(data)) {
-    list = data;
-  } else if (typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-    const structured = (obj.structuredContent && typeof obj.structuredContent === "object")
-      ? (obj.structuredContent as Record<string, unknown>)
-      : (obj.result && typeof obj.result === "object" && (obj.result as any).structuredContent && typeof (obj.result as any).structuredContent === "object")
-      ? ((obj.result as any).structuredContent as Record<string, unknown>)
-      : undefined;
-
-    if (structured) {
-      if (Array.isArray(structured.products)) {
-        list = structured.products;
-      } else if (Array.isArray(structured.items)) {
-        list = structured.items;
-      } else if (Array.isArray(structured.variations)) {
-        list = structured.variations;
+  const collectItems = (source: unknown) => {
+    if (!source) return;
+    if (Array.isArray(source)) {
+      for (const el of source) {
+        collectItems(el);
       }
+      return;
+    }
+    if (typeof source !== "object") return;
+    const obj = source as Record<string, unknown>;
+
+    // Dig into structuredContent / result / data envelopes
+    if (obj.structuredContent && typeof obj.structuredContent === "object") {
+      collectItems(obj.structuredContent);
+    }
+    if (obj.result && typeof obj.result === "object") {
+      collectItems(obj.result);
+    }
+    if (obj.data && typeof obj.data === "object") {
+      collectItems(obj.data);
     }
 
-    if (list.length === 0) {
-      if (Array.isArray(obj.products)) {
-        list = obj.products;
-      } else if (Array.isArray(obj.items)) {
-        list = obj.items;
-      } else if (obj.data && typeof obj.data === "object") {
-        const d = obj.data as Record<string, unknown>;
-        if (Array.isArray(d.products)) list = d.products;
-        else if (Array.isArray(d.items)) list = d.items;
-        else if (Array.isArray(d.variations)) list = d.variations;
-      } else if (obj.result && typeof obj.result === "object") {
-        const r = obj.result as Record<string, unknown>;
-        if (Array.isArray(r.products)) list = r.products;
-        else if (Array.isArray(r.items)) list = r.items;
-        else if (Array.isArray(r.variations)) list = r.variations;
-      } else if (Array.isArray(obj.cards)) {
-        for (const card of obj.cards as any[]) {
-          if (card && typeof card === "object") {
-            if (Array.isArray(card.items)) list.push(...card.items);
-            else if (Array.isArray(card.products)) list.push(...card.products);
-            else if (card.card && typeof card.card === "object") {
-              const inner = card.card;
-              if (Array.isArray(inner.items)) list.push(...inner.items);
-              else if (Array.isArray(inner.products)) list.push(...inner.products);
-              else if (inner.gridElements?.infoWithStyle?.items && Array.isArray(inner.gridElements.infoWithStyle.items)) {
-                list.push(...inner.gridElements.infoWithStyle.items);
-              }
-            }
+    // Direct product / item arrays
+    if (Array.isArray(obj.products)) rawList.push(...obj.products);
+    if (Array.isArray(obj.items)) rawList.push(...obj.items);
+    if (Array.isArray(obj.variations)) rawList.push(...obj.variations);
+
+    // Cards / widgets arrays
+    if (Array.isArray(obj.cards)) {
+      for (const card of obj.cards as any[]) {
+        if (card && typeof card === "object") {
+          if (Array.isArray(card.items)) rawList.push(...card.items);
+          if (Array.isArray(card.products)) rawList.push(...card.products);
+          const innerCard = card.card?.card || card.card || card;
+          if (Array.isArray(innerCard.items)) rawList.push(...innerCard.items);
+          if (Array.isArray(innerCard.products)) rawList.push(...innerCard.products);
+          if (Array.isArray(innerCard.gridElements?.infoWithStyle?.items)) {
+            rawList.push(...innerCard.gridElements.infoWithStyle.items);
           }
         }
       }
     }
-  }
+    if (Array.isArray(obj.widgets)) {
+      for (const w of obj.widgets as any[]) {
+        if (w && typeof w === "object") {
+          if (Array.isArray(w.items)) rawList.push(...w.items);
+          if (Array.isArray(w.products)) rawList.push(...w.products);
+          if (w.data && typeof w.data === "object") {
+            if (Array.isArray(w.data.items)) rawList.push(...w.data.items);
+            if (Array.isArray(w.data.products)) rawList.push(...w.data.products);
+          }
+        }
+      }
+    }
+
+    // Leaf product candidate check (if this object is itself a product)
+    if (
+      (obj.id != null || obj.productId != null || obj.product_id != null || obj.spin != null || obj.spin_id != null || obj.variant_id != null) &&
+      (obj.name != null || obj.display_name != null || obj.price != null || obj.store_price != null || obj.mrp != null)
+    ) {
+      rawList.push(obj);
+    }
+  };
+
+  collectItems(data);
 
   const results: RawSwiggyInstamartProduct[] = [];
-  for (const item of list) {
+  const seenIds = new Set<string>();
+
+  for (const item of rawList) {
     if (!item || typeof item !== "object") continue;
-    const it = item as Record<string, unknown>;
-    // Check if item has product identifier
-    if (
-      it.id != null ||
-      it.productId != null ||
-      it.product_id != null ||
-      it.spin != null ||
-      it.spin_id != null ||
-      it.variant_id != null
-    ) {
-      results.push(it as RawSwiggyInstamartProduct);
+    let it = item as Record<string, unknown>;
+
+    // Unpack Swiggy card envelope if present: { card: { info: { ... } } } or { product: { ... } }
+    if (it.card && typeof it.card === "object") {
+      const cardObj = it.card as Record<string, unknown>;
+      if (cardObj.info && typeof cardObj.info === "object") {
+        it = cardObj.info as Record<string, unknown>;
+      } else if (cardObj.card && typeof cardObj.card === "object") {
+        it = cardObj.card as Record<string, unknown>;
+      } else {
+        it = cardObj;
+      }
+    } else if (it.product && typeof it.product === "object") {
+      it = it.product as Record<string, unknown>;
+    } else if (it.info && typeof it.info === "object") {
+      it = it.info as Record<string, unknown>;
     }
+
+    // If item has variations array and top-level misses price or spin, merge variation fields
+    if (Array.isArray(it.variations) && it.variations.length > 0) {
+      const firstVar = it.variations[0];
+      if (firstVar && typeof firstVar === "object") {
+        it = {
+          ...firstVar,
+          ...it,
+          price: it.price ?? firstVar.price ?? firstVar.store_price,
+          mrp: it.mrp ?? firstVar.mrp,
+          spin_id: it.spin_id ?? it.spin ?? firstVar.spin_id ?? firstVar.spin ?? firstVar.id,
+        };
+      }
+    }
+
+    const rawId = it.id ?? it.productId ?? it.product_id ?? it.spin ?? it.spin_id ?? it.variant_id;
+    if (rawId == null) continue;
+    const idStr = String(rawId).trim();
+    if (!idStr || seenIds.has(idStr)) continue;
+    seenIds.add(idStr);
+
+    results.push(it as RawSwiggyInstamartProduct);
   }
 
   return results;

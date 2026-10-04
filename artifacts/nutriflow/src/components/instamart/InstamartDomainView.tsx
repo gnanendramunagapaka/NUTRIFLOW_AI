@@ -18,9 +18,7 @@ import {
   ListChecks,
   Sparkles,
   MapPin,
-  Home,
 } from "lucide-react";
-import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useCart } from "@/hooks/use-cart";
 import { useAuth } from "@/hooks/use-auth";
@@ -138,33 +136,33 @@ export function InstamartDomainView() {
 
       return {
         id: meta?.productId || c.id,
-        name: c.name || "Grocery Item",
+        name: c.name || "Pantry Item",
         category: c.categoryTags?.[0] || "Grocery",
         quantity: meta?.quantity || "",
         unit: "",
-        price: mrp || price,
-        discountPrice: price < (mrp || price) ? price : undefined,
+        price: mrp || price || 0,
+        discountPrice: (mrp && price && price < mrp) ? price : undefined,
         discountText,
         inStock: c.availability !== "unavailable",
         rating: meta?.rating,
-        imageUrl: undefined, // Do not fabricate images
+        imageUrl: meta?.imageUrl, // Real Swiggy product image URL if provided
         deliveryTime: undefined,
-        description: rec.explanation || "Fresh grocery item delivered via Swiggy Instamart",
+        description: c.categoryTags?.join(", ") || "Fresh grocery item delivered via Swiggy Instamart",
       };
     });
   }, [instamartData]);
 
   const filteredProducts = useMemo(() => {
-    return liveProducts.filter((p) => {
-      const matchesCategory =
-        activeCategory === "all" ||
-        p.category.toLowerCase().includes(activeCategory.toLowerCase());
-      const matchesSearch =
-        !search ||
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.category.toLowerCase().includes(search.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
+    if (search.trim()) {
+      // Free-text search was sent to Swiggy MCP explicitly; preserve Swiggy's returned ordering
+      return liveProducts;
+    }
+    if (activeCategory === "all") {
+      return liveProducts;
+    }
+    return liveProducts.filter((p) =>
+      p.category.toLowerCase().includes(activeCategory.toLowerCase())
+    );
   }, [liveProducts, activeCategory, search]);
 
   const handleAddToCart = (product: InstamartProductData) => {
@@ -250,7 +248,7 @@ export function InstamartDomainView() {
               </div>
               <p className="text-sm font-bold text-foreground">Your checklist is up to date</p>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Items recommended by your wellness profile or added from Instamart will appear here.
+                Items added from Instamart or your shopping plans will appear here.
               </p>
             </AppCard>
           ) : (
@@ -351,15 +349,9 @@ export function InstamartDomainView() {
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-foreground">No Delivery Address Selected</h3>
                 <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                  Please select your delivery address on the Home page to get personalized live Instamart grocery recommendations.
+                  Please select your delivery address from the TopBar above to discover live Instamart groceries and essentials available in your area.
                 </p>
               </div>
-              <Link href="/">
-                <SecondaryButton size="sm" className="text-xs gap-1.5 mt-2">
-                  <Home className="h-3.5 w-3.5" />
-                  <span>Go to Home</span>
-                </SecondaryButton>
-              </Link>
             </AppCard>
           ) : loadingCatalog ? (
             <div className="space-y-4">
@@ -413,8 +405,8 @@ export function InstamartDomainView() {
             /* Product Grid */
             <div className="space-y-4">
               <SectionHeader
-                title="Popular Everyday Essentials"
-                subtitle="Groceries & everyday essentials from Swiggy Instamart."
+                title={search.trim() ? `Results for "${search.trim()}"` : (activeCategory !== "all" ? `${activeCategory} Essentials` : "Popular Everyday Essentials")}
+                subtitle={search.trim() ? "Live products from Swiggy Instamart" : "Groceries & everyday essentials from Swiggy Instamart."}
               />
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">

@@ -24,6 +24,7 @@ export interface SwiggySourceMetadata {
   quantity?: string;
   distance?: string;
   offers?: string[];
+  imageUrl?: string;
 }
 
 export interface LiveRecommendationCandidateItem extends RankedRecommendationCandidate {

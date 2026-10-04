@@ -116,12 +116,20 @@ export function InstamartProductDetailSheet({
           {/* Pricing Box */}
           <div className="bg-muted/40 p-3.5 rounded-2xl flex items-baseline justify-between border border-border/60">
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">
-                ₹{currentPrice}
-              </span>
-              {product.discountPrice && (
-                <span className="text-xs text-muted-foreground line-through">
-                  MRP ₹{product.price}
+              {currentPrice > 0 ? (
+                <>
+                  <span className="text-xl font-black text-emerald-600 dark:text-emerald-400">
+                    ₹{currentPrice}
+                  </span>
+                  {product.discountPrice && product.price > product.discountPrice && (
+                    <span className="text-xs text-muted-foreground line-through">
+                      MRP ₹{product.price}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-sm font-bold text-muted-foreground">
+                  Price at checkout
                 </span>
               )}
             </div>
@@ -199,7 +207,7 @@ export function InstamartProductDetailSheet({
             ) : (
               <>
                 <ShoppingCart className="h-4 w-4" />
-                <span>Add {quantity} to Grocery Basket (₹{currentPrice * quantity})</span>
+                <span>Add {quantity} to Grocery Basket {currentPrice > 0 ? `(₹${currentPrice * quantity})` : ""}</span>
               </>
             )}
           </PrimaryButton>

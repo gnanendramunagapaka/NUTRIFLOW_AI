@@ -90,9 +90,15 @@ export function DineoutRestaurantCard({
 
         <div className="space-y-1.5 pt-1 border-t border-border/50 text-[11px] text-muted-foreground">
           <div className="flex items-center justify-between">
-            <span className="font-semibold text-foreground/90">
-              ₹{restaurant.costForTwo || 1000} for two
-            </span>
+            {restaurant.costForTwo != null && Number(restaurant.costForTwo) > 0 ? (
+              <span className="font-semibold text-foreground/90">
+                ₹{restaurant.costForTwo} for two
+              </span>
+            ) : (
+              <span className="font-medium text-muted-foreground">
+                Dining
+              </span>
+            )}
             {restaurant.locality && (
               <span className="flex items-center gap-0.5 truncate max-w-[130px]">
                 <MapPin className="h-3 w-3 shrink-0" />

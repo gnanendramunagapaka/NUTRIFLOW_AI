@@ -8,7 +8,7 @@ import {
   type CurrentRequestContext,
 } from "@workspace/api-zod";
 import { buildProfileContextFromProfile } from "./profileContext";
-import { executeSharedRecommendation } from "./recommendationService";
+import { executeSwiggyDiscovery } from "./recommendationService";
 import { buildCurrentRequestContext } from "./currentContext";
 import { getValidUserToken, invalidateUserToken } from "./swiggyTokens";
 import {
@@ -172,11 +172,7 @@ export async function executeFoodRecommendation(
       }
     } else {
       // Restaurants mode
-      const explicitQuery =
-        request.query?.trim() ||
-        normalizedCurrentRequest?.craving ||
-        profileContext.dietary.cuisinePreferences?.[0] ||
-        determineFoodDiscoveryIntent(profileContext, normalizedCurrentRequest);
+      const explicitQuery = request.query?.trim() || "restaurants";
 
       let rawRestaurants = await mcpClient.searchRestaurants(userToken, {
         query: explicitQuery,
@@ -186,13 +182,9 @@ export async function executeFoodRecommendation(
       });
 
       // Zero-result live fallback: broaden retrieval if primary intent returns 0 candidates
-      if (rawRestaurants.length === 0) {
-        const fallbackQueries = [
-          profileContext.dietary.dietaryPattern?.toLowerCase() === "vegetarian" ? "pure veg" : "healthy food",
-          "restaurants",
-        ];
+      if (rawRestaurants.length === 0 && explicitQuery !== "restaurants") {
+        const fallbackQueries = ["restaurants"];
         for (const fq of fallbackQueries) {
-          if (fq === explicitQuery) continue;
           try {
             const fallbackRaw = await mcpClient.searchRestaurants(userToken, {
               query: fq,
@@ -205,7 +197,7 @@ export async function executeFoodRecommendation(
               break;
             }
           } catch {
-            // Keep going or fail gracefully
+            // Graceful fallback
           }
         }
       }
@@ -234,8 +226,8 @@ export async function executeFoodRecommendation(
       };
     }
 
-    // 7. Pass normalized candidates through Phase 2 Shared Recommendation Service
-    const recommendationResult = executeSharedRecommendation(profileContext, {
+    // 7. Pass normalized candidates through Phase 3 Live Swiggy Discovery (preserves Swiggy ordering, applies hard safety, no deterministic scoring)
+    const recommendationResult = executeSwiggyDiscovery(profileContext, {
       domain: "food",
       currentRequest: normalizedCurrentRequest,
       candidates,

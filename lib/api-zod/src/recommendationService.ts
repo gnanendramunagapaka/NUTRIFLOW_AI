@@ -6,6 +6,7 @@ import {
 } from "./profileContext";
 import {
   CandidateSafetyDataSchema,
+  evaluateCandidateEligibility,
 } from "./safetyEligibility";
 import {
   CandidateMatchDataSchema,
@@ -122,6 +123,133 @@ export function executeSharedRecommendation(
       rankedCount: totalRanked,
       excludedCount: pipelineResult.excludedCandidates.length,
       returnedCount: recommendations.length,
+    },
+  };
+}
+
+/**
+ * Phase 3 Live Swiggy Discovery Orchestrator.
+ *
+ * New Phase 3 Philosophy:
+ * - Phase 3 is Live Swiggy Discovery (address + search/filter + live Swiggy MCP).
+ * - Does NOT use deterministic Profile Context scoring (no goalMatch, cuisineMatch,
+ *   likedFoodMatch, dislikedFoodPenalty, dietaryAlignment, or artificial score totals).
+ * - Preserves Swiggy-provided discovery ordering (rank: 1, 2, 3...).
+ * - Validates candidate against hard safety constraints (allergies, hard dietary exclusions)
+ *   without inventing or inferring wellness scores.
+ * - Does NOT replace the engine with another arbitrary ranking formula.
+ */
+export function executeSwiggyDiscovery(
+  profile: ProfileContext,
+  request: RecommendationRequest
+): RecommendationResponse {
+  const validatedProfile = ProfileContextSchema.parse(profile);
+  const validatedRequest = RecommendationRequestSchema.parse(request);
+
+  const candidates = validatedRequest.candidates;
+  const recommendations: any[] = [];
+  const excludedCandidates: any[] = [];
+
+  for (let idx = 0; idx < candidates.length; idx++) {
+    const rawCandidate = candidates[idx];
+    const safetyResult = evaluateCandidateEligibility(validatedProfile, rawCandidate.safetyData);
+
+    // Hard Safety Gate: Ineligible candidates MUST NOT be displayed in live discovery
+    if (safetyResult.status === "ineligible") {
+      const exclusionCodes = safetyResult.reasons.map((r) => r.code);
+      const explanation = safetyResult.reasons.length > 0
+        ? `Excluded by safety rule: ${safetyResult.reasons.map((r) => r.message).join(" ")}`
+        : "Excluded by hard safety constraint.";
+
+      excludedCandidates.push({
+        candidate: {
+          id: rawCandidate.id,
+          name: rawCandidate.name,
+          domain: rawCandidate.domain,
+          safetyResult,
+          matchResult: {
+            candidateId: rawCandidate.id,
+            goalMatch: "unknown",
+            cuisineMatch: "unknown",
+            likedFoodMatch: "unknown",
+            dislikedFoodMatch: "unknown",
+            dietaryMatch: "unknown",
+            signals: [],
+          },
+          availability: rawCandidate.availability,
+          price: rawCandidate.price,
+          contextTags: rawCandidate.contextTags,
+          mealOccasions: rawCandidate.mealOccasions,
+          categoryTags: rawCandidate.categoryTags,
+          matchableAttributes: rawCandidate.matchableAttributes,
+          sourceMetadata: (rawCandidate as any).sourceMetadata,
+        },
+        eligibility: "ineligible",
+        exclusionReasonCodes: exclusionCodes,
+        explanation,
+      });
+      continue;
+    }
+
+    // Live Swiggy discovery candidate:
+    // Preserves Swiggy's returned ordering (rank: 1, 2, 3...)
+    // Total score is neutral (0) - no artificial wellness scores or goalMatch claims
+    recommendations.push({
+      candidate: {
+        id: rawCandidate.id,
+        name: rawCandidate.name,
+        domain: rawCandidate.domain,
+        safetyResult,
+        matchResult: {
+          candidateId: rawCandidate.id,
+          goalMatch: "unknown",
+          cuisineMatch: "unknown",
+          likedFoodMatch: "unknown",
+          dislikedFoodMatch: "unknown",
+          dietaryMatch: "unknown",
+          signals: [],
+        },
+        availability: rawCandidate.availability,
+        price: rawCandidate.price,
+        contextTags: rawCandidate.contextTags,
+        mealOccasions: rawCandidate.mealOccasions,
+        categoryTags: rawCandidate.categoryTags,
+        matchableAttributes: rawCandidate.matchableAttributes,
+        sourceMetadata: (rawCandidate as any).sourceMetadata,
+      },
+      rank: recommendations.length + 1,
+      totalScore: 0,
+      eligibility: safetyResult.status,
+      signalBreakdown: {
+        goalScore: 0,
+        cuisineScore: 0,
+        likedFoodScore: 0,
+        dislikedFoodScore: 0,
+        dietaryScore: 0,
+        contextScore: 0,
+        availabilityScore: 0,
+        budgetScore: 0,
+      },
+      reasonCodes: safetyResult.status === "eligible" ? ["SAFETY_ELIGIBLE"] : ["SAFETY_UNKNOWN"],
+      explanation: rawCandidate.name || "Live Swiggy discovery result",
+    });
+  }
+
+  const limit = validatedRequest.limit;
+  const limitedRecommendations =
+    typeof limit === "number" && limit > 0
+      ? recommendations.slice(0, limit)
+      : recommendations;
+
+  return {
+    domain: validatedRequest.domain,
+    recommendations: limitedRecommendations,
+    excludedCandidates,
+    metadata: {
+      totalCandidates: candidates.length,
+      rankedCount: recommendations.length,
+      excludedCount: excludedCandidates.length,
+      returnedCount: limitedRecommendations.length,
     },
   };
 }

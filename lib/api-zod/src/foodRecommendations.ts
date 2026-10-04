@@ -357,54 +357,111 @@ export function extractFoodRestaurantsFromMcp(data: unknown): RawSwiggyFoodResta
 
 /**
  * Extracts raw menu items from an unwrapped MCP response.
+ * Handles flat item arrays, categories, Swiggy regular card groups, and card.info envelopes.
  */
 export function extractFoodMenuItemsFromMcp(data: unknown): RawSwiggyFoodMenuItem[] {
   if (!data) return [];
 
-  let list: unknown[] = [];
+  let rawList: unknown[] = [];
 
-  if (Array.isArray(data)) {
-    list = data;
-  } else if (typeof data === "object") {
-    const obj = data as Record<string, unknown>;
-    const structured = (obj.structuredContent && typeof obj.structuredContent === "object")
-      ? (obj.structuredContent as Record<string, unknown>)
-      : (obj.result && typeof obj.result === "object" && (obj.result as any).structuredContent && typeof (obj.result as any).structuredContent === "object")
-      ? ((obj.result as any).structuredContent as Record<string, unknown>)
-      : undefined;
+  const collectItems = (source: unknown) => {
+    if (!source) return;
+    if (Array.isArray(source)) {
+      for (const el of source) {
+        collectItems(el);
+      }
+      return;
+    }
+    if (typeof source !== "object") return;
+    const obj = source as Record<string, unknown>;
 
-    if (structured && Array.isArray(structured.items)) {
-      list = structured.items;
-    } else if (structured && Array.isArray(structured.menu)) {
-      list = structured.menu;
-    } else if (Array.isArray(obj.items)) {
-      list = obj.items;
-    } else if (Array.isArray(obj.menu)) {
-      list = obj.menu;
-    } else if (obj.data && typeof obj.data === "object") {
-      const d = obj.data as Record<string, unknown>;
-      if (Array.isArray(d.items)) list = d.items;
-      else if (Array.isArray(d.menu)) list = d.menu;
-    } else if (obj.result && typeof obj.result === "object") {
-      const r = obj.result as Record<string, unknown>;
-      if (Array.isArray(r.items)) list = r.items;
-      else if (Array.isArray(r.menu)) list = r.menu;
-    } else if (Array.isArray(obj.categories)) {
+    // Dig into structuredContent envelopes if present
+    if (obj.structuredContent && typeof obj.structuredContent === "object") {
+      collectItems(obj.structuredContent);
+    }
+    if (obj.result && typeof obj.result === "object") {
+      collectItems(obj.result);
+    }
+    if (obj.data && typeof obj.data === "object") {
+      collectItems(obj.data);
+    }
+
+    // Direct items or menu arrays
+    if (Array.isArray(obj.items)) rawList.push(...obj.items);
+    if (Array.isArray(obj.menu)) rawList.push(...obj.menu);
+    if (Array.isArray(obj.dishes)) rawList.push(...obj.dishes);
+
+    // Category structures
+    if (Array.isArray(obj.categories)) {
       for (const cat of obj.categories as any[]) {
-        if (cat && Array.isArray(cat.items)) {
-          list.push(...cat.items);
+        if (cat && typeof cat === "object") {
+          if (Array.isArray(cat.items)) rawList.push(...cat.items);
+          if (Array.isArray(cat.itemCards)) rawList.push(...cat.itemCards);
+          if (Array.isArray(cat.dishes)) rawList.push(...cat.dishes);
         }
       }
     }
-  }
+
+    // Card groupings (Swiggy menu envelope)
+    if (Array.isArray(obj.cards)) {
+      for (const card of obj.cards as any[]) {
+        if (card && typeof card === "object") {
+          const innerCard = (card as any).card?.card || (card as any).card || card;
+          if (Array.isArray(innerCard.itemCards)) rawList.push(...innerCard.itemCards);
+          if (Array.isArray(innerCard.items)) rawList.push(...innerCard.items);
+          if (Array.isArray(innerCard.categories)) {
+            for (const cat of innerCard.categories) {
+              if (cat && Array.isArray(cat.itemCards)) rawList.push(...cat.itemCards);
+              if (cat && Array.isArray(cat.items)) rawList.push(...cat.items);
+            }
+          }
+          if (innerCard.groupedCard && Array.isArray(innerCard.groupedCard.cardGroupMap?.REGULAR?.cards)) {
+            for (const gc of innerCard.groupedCard.cardGroupMap.REGULAR.cards) {
+              const gcCard = gc?.card?.card;
+              if (gcCard && Array.isArray(gcCard.itemCards)) rawList.push(...gcCard.itemCards);
+              if (gcCard && Array.isArray(gcCard.categories)) {
+                for (const cat of gcCard.categories) {
+                  if (cat && Array.isArray(cat.itemCards)) rawList.push(...cat.itemCards);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // If candidate itself looks like a leaf item (has id/item_id and name/price)
+    if ((obj.id != null || obj.item_id != null) && (obj.name != null || obj.price != null || obj.defaultPrice != null)) {
+      rawList.push(obj);
+    }
+  };
+
+  collectItems(data);
 
   const results: RawSwiggyFoodMenuItem[] = [];
-  for (const item of list) {
+  const seenIds = new Set<string>();
+
+  for (const item of rawList) {
     if (!item || typeof item !== "object") continue;
-    const it = item as Record<string, unknown>;
-    if (it.id != null || it.item_id != null) {
-      results.push(it as RawSwiggyFoodMenuItem);
+    let it = item as Record<string, unknown>;
+
+    // Unpack Swiggy card envelope if present: { card: { info: { ... } } }
+    if (it.card && typeof it.card === "object") {
+      const cardObj = it.card as Record<string, unknown>;
+      if (cardObj.info && typeof cardObj.info === "object") {
+        it = cardObj.info as Record<string, unknown>;
+      } else {
+        it = cardObj;
+      }
     }
+
+    const rawId = it.id ?? it.item_id;
+    if (rawId == null) continue;
+    const idStr = String(rawId).trim();
+    if (!idStr || seenIds.has(idStr)) continue;
+    seenIds.add(idStr);
+
+    results.push(it as RawSwiggyFoodMenuItem);
   }
 
   return results;

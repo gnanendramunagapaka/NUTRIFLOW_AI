@@ -8,7 +8,7 @@ import {
   type CurrentRequestContext,
 } from "@workspace/api-zod";
 import { buildProfileContextFromProfile } from "./profileContext";
-import { executeSharedRecommendation } from "./recommendationService";
+import { executeSwiggyDiscovery } from "./recommendationService";
 import { buildCurrentRequestContext } from "./currentContext";
 import { getValidUserToken, invalidateUserToken } from "./swiggyTokens";
 import {
@@ -160,7 +160,7 @@ export async function executeInstamartRecommendation(
         }
       }
     } else {
-      // If no explicit query provided, try yourGoToItems first, fallback to Profile Context discovery query
+      // If no explicit query provided, try live yourGoToItems first, fallback to common live groceries
       try {
         rawProducts = await mcpClient.yourGoToItems(userToken, {
           address_id: selectedAddress.id,
@@ -170,22 +170,6 @@ export async function executeInstamartRecommendation(
         // Fallback gracefully
       }
 
-      if (rawProducts.length === 0) {
-        const discoveryQuery = determineInstamartDiscoveryIntent(profileContext, normalizedCurrentRequest);
-        try {
-          rawProducts = await mcpClient.searchProducts(userToken, {
-            query: discoveryQuery,
-            address_id: selectedAddress.id,
-            addressId: selectedAddress.id,
-            lat: selectedAddress.lat,
-            lng: selectedAddress.lng,
-          });
-        } catch {
-          // Graceful fallback
-        }
-      }
-
-      // If discovery query still returned 0, broaden to common live groceries
       if (rawProducts.length === 0) {
         try {
           rawProducts = await mcpClient.searchProducts(userToken, {
@@ -222,8 +206,8 @@ export async function executeInstamartRecommendation(
       };
     }
 
-    // 7. Pass normalized candidates through Phase 2 Shared Recommendation Service
-    const recommendationResult = executeSharedRecommendation(profileContext, {
+    // 7. Pass normalized candidates through Phase 3 Live Swiggy Discovery (preserves Swiggy order, hard safety only)
+    const recommendationResult = executeSwiggyDiscovery(profileContext, {
       domain: "instamart",
       currentRequest: normalizedCurrentRequest,
       candidates,

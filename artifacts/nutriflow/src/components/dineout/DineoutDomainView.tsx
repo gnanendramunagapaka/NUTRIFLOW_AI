@@ -72,7 +72,7 @@ export function DineoutDomainView() {
         distance: meta?.distance,
         timings: undefined, // Do not fabricate timings
         offerText: meta?.offers?.[0], // Real offer if present in metadata
-        imageUrl: undefined, // Do not fabricate images
+        imageUrl: meta?.imageUrl,
         isOpen: c.availability !== "unavailable",
       };
     });

@@ -95,12 +95,20 @@ export function InstamartProductCard({
         <div className="space-y-2 pt-1 border-t border-border/50">
           <div className="flex items-baseline justify-between gap-1">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
-                ₹{currentPrice}
-              </span>
-              {product.discountPrice && (
-                <span className="text-[11px] text-muted-foreground line-through">
-                  ₹{product.price}
+              {currentPrice > 0 ? (
+                <>
+                  <span className="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">
+                    ₹{currentPrice}
+                  </span>
+                  {product.discountPrice && product.price > product.discountPrice && (
+                    <span className="text-[11px] text-muted-foreground line-through">
+                      ₹{product.price}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Price at checkout
                 </span>
               )}
             </div>

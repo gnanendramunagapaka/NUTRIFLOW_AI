@@ -6,7 +6,7 @@ import {
   type RawSwiggyDineoutRestaurant,
 } from "@workspace/api-zod";
 import { buildProfileContextFromProfile } from "./profileContext";
-import { executeSharedRecommendation } from "./recommendationService";
+import { executeSwiggyDiscovery } from "./recommendationService";
 import { buildCurrentRequestContext } from "./currentContext";
 import { getValidUserToken, invalidateUserToken } from "./swiggyTokens";
 import {
@@ -107,7 +107,6 @@ export async function executeDineoutRecommendation(
     const explicitQuery =
       request.query?.trim() ||
       normalizedCurrentRequest?.craving ||
-      profileContext.dietary.cuisinePreferences?.[0] ||
       "restaurants";
 
     const targetAddressId = selectedLocation.addressId || selectedLocation.id;
@@ -165,8 +164,8 @@ export async function executeDineoutRecommendation(
       };
     }
 
-    // 7. Pass normalized candidates through Phase 2 Shared Recommendation Service
-    const recommendationResult = executeSharedRecommendation(profileContext, {
+    // 7. Pass normalized candidates through Phase 3 Live Swiggy Discovery (preserves Swiggy order, hard safety only)
+    const recommendationResult = executeSwiggyDiscovery(profileContext, {
       domain: "dineout",
       currentRequest: normalizedCurrentRequest,
       candidates,

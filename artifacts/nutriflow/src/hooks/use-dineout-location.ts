@@ -109,10 +109,39 @@ export function resolveDineoutLocationFromHome(
   const matched = locations.find((l) => l.addressId === targetId || l.id === targetId);
   if (matched) return matched;
 
-  // 2. Single location available
+  // 2. City-aware resolution & Mismatch Prevention
+  const homeCity = homeAddress.city?.trim().toLowerCase();
+  const homeAddr = homeAddress.address?.toLowerCase() || "";
+
+  // Check if any locations match the home address city or locality
+  const cityMatches = locations.filter((loc) => {
+    const locCity = loc.city?.trim().toLowerCase();
+    if (homeCity && locCity) {
+      return locCity === homeCity || locCity.includes(homeCity) || homeCity.includes(locCity);
+    }
+    if (homeCity && loc.address) {
+      return loc.address.toLowerCase().includes(homeCity);
+    }
+    if (locCity && homeAddr) {
+      return homeAddr.includes(locCity);
+    }
+    return false;
+  });
+
+  if (cityMatches.length === 1) return cityMatches[0];
+  const defaultCityMatch = cityMatches.find((l) => l.isDefault);
+  if (defaultCityMatch) return defaultCityMatch;
+  if (cityMatches.length > 1) return cityMatches[0];
+
+  // CRITICAL MISMATCH GUARD: If home address has an identifiable city/locality, and locations have differing cities,
+  // NEVER fall back to a location in a different city (e.g. Visakhapatnam home address cannot resolve to Hyderabad Dineout location).
+  if (homeCity) {
+    return null;
+  }
+
+  // 3. Fallback only when home address has no identifiable city at all:
   if (locations.length === 1) return locations[0];
 
-  // 3. Explicit default location
   const defaultLoc = locations.find((l) => l.isDefault);
   if (defaultLoc) return defaultLoc;
 

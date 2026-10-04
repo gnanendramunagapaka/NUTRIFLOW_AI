@@ -1254,4 +1254,88 @@ await test("44. Regression G: Existing locationId to addressId mapping remains i
   assert(data.recommendations.length > 0, "Must return ranked recommendations from parsed prose");
 });
 
+await test("45. Dineout normalizer preserves real Swiggy image URL without fabrication", async () => {
+  const normalizedWithImage = normalizeSwiggyDineoutRestaurant({
+    id: "rst_img_1",
+    name: "Barbeque Nation",
+    imageUrl: "https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto/bbq_sample.jpg",
+  });
+  assert(
+    normalizedWithImage.sourceMetadata?.imageUrl?.includes("bbq_sample.jpg") === true,
+    "Real Swiggy image URL must be preserved in sourceMetadata"
+  );
+
+  const normalizedWithoutImage = normalizeSwiggyDineoutRestaurant({
+    id: "rst_img_2",
+    name: "Pure Dining",
+  });
+  assert(
+    normalizedWithoutImage.sourceMetadata?.imageUrl === undefined,
+    "Missing image must remain undefined and not fabricated"
+  );
+});
+
+await test("46. Dineout discovery preserves Swiggy returned ordering without Profile Context scoring", async () => {
+  const client = createMockDineoutMcpClient({
+    restaurants: [
+      { id: "swiggy_rest_1", name: "Low Score First", avg_rating: 3.8, cuisine: "Continental" },
+      { id: "swiggy_rest_2", name: "Perfect Profile Match", avg_rating: 4.9, cuisine: "North Indian, Mughlai" },
+      { id: "swiggy_rest_3", name: "Medium Score Third", avg_rating: 4.2, cuisine: "South Indian" },
+    ],
+  });
+
+  const result = await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "restaurants" },
+    {
+      mcpClient: client,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(result.status === 200, "Must succeed with 200");
+  const data = result.data as any;
+  assert(data.recommendations.length === 3, "Must return 3 recommendations");
+  assert(data.recommendations[0].candidate.id === "dine-rst-swiggy_rest_1", "Swiggy item 1 must remain 1st");
+  assert(data.recommendations[1].candidate.id === "dine-rst-swiggy_rest_2", "Swiggy item 2 must remain 2nd");
+  assert(data.recommendations[2].candidate.id === "dine-rst-swiggy_rest_3", "Swiggy item 3 must remain 3rd");
+});
+
+await test("47. Dineout search passes explicit user query without injecting Profile Context keywords", async () => {
+  let capturedQuery = "";
+  const client = createMockDineoutMcpClient({
+    captureLastRequest: (_url, _headers, body) => {
+      capturedQuery = body.params?.arguments?.query;
+    },
+  });
+
+  await executeDineoutRecommendation(
+    mockProfileUser,
+    { query: "pizza" },
+    {
+      mcpClient: client,
+      getTokenFn: async () => "valid_token",
+    }
+  );
+
+  assert(capturedQuery === "pizza", `Search query must be exactly "pizza", got "${capturedQuery}"`);
+  assert(!capturedQuery.includes("High Protein"), "Must not inject dietary preferences");
+  assert(!capturedQuery.includes("North Indian"), "Must not inject cuisine preferences");
+});
+
+await test("48. Cost for two is preserved without fake ₹1000 fallback", async () => {
+  const norm1 = normalizeSwiggyDineoutRestaurant({
+    id: "rst_cost_1",
+    name: "Fine Dine",
+    costForTwo: 2400,
+  });
+  assert(norm1.sourceMetadata?.costForTwo === 2400, "Real costForTwo must be preserved");
+
+  const norm2 = normalizeSwiggyDineoutRestaurant({
+    id: "rst_cost_2",
+    name: "Cafe",
+  });
+  assert(norm2.sourceMetadata?.costForTwo === undefined, "Missing costForTwo must remain undefined");
+});
+
 console.log(`\n🎉 All ${passedCount} Phase 3 Part 4 Live Dineout Integration tests passed successfully!\n`);

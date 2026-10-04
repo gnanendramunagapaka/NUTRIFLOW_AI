@@ -40,6 +40,7 @@ export const SwiggySourceMetadataSchema = z.object({
   quantity: z.string().optional(),
   distance: z.string().optional(),
   offers: z.array(z.string()).optional(),
+  imageUrl: z.string().optional(),
 });
 
 export type SwiggySourceMetadata = z.infer<typeof SwiggySourceMetadataSchema>;
@@ -105,27 +106,52 @@ export interface RawSwiggyInstamartProduct {
   product_id?: string | number;
   name?: string;
   display_name?: string;
+  title?: string;
+  product_name?: string;
+  productName?: string;
   brand?: string;
-  price?: number;
+  brand_name?: string;
+  brandName?: string;
+  price?: number | Record<string, unknown>;
   store_price?: number;
+  storePrice?: number;
   offer_price?: number;
-  mrp?: number;
+  offerPrice?: number;
+  final_price?: number;
+  finalPrice?: number;
+  price_in_paise?: number | string;
+  priceInPaise?: number | string;
+  mrp?: number | Record<string, unknown>;
+  mrp_price?: number;
+  mrpPrice?: number;
   inStock?: boolean | number;
   in_stock?: boolean | number;
   inventory?: number;
   category?: string;
   category_name?: string;
+  categoryName?: string;
+  superCategory?: string;
   spin?: string | number;
   spin_id?: string | number;
   variant_id?: string | number;
   quantity?: string;
   weight?: string;
+  unit?: string;
+  pack_size?: string;
+  packSize?: string;
   rating?: number | string;
   tags?: string[];
   isVeg?: boolean | number;
   is_veg?: boolean | number;
   allergens?: string[];
   ingredients?: string[];
+  imageUrl?: string;
+  image_url?: string;
+  image?: string;
+  images?: string[] | string;
+  imageId?: string;
+  image_id?: string;
+  cloudinaryImageId?: string;
 }
 
 export interface RawSwiggyDineoutRestaurant {
@@ -149,6 +175,13 @@ export interface RawSwiggyDineoutRestaurant {
   amenities?: string[];
   tags?: string[];
   isVeg?: boolean | number;
+  imageUrl?: string;
+  image_url?: string;
+  image?: string;
+  images?: string[] | string;
+  imageId?: string;
+  image_id?: string;
+  cloudinaryImageId?: string;
 }
 
 // ─── 3. Pure Normalization Helpers ─────────────────────────────────────────────
@@ -166,6 +199,21 @@ function parseNumber(val?: unknown): number | undefined {
     if (!cleaned) return undefined;
     const num = Number(cleaned);
     return !isNaN(num) ? num : undefined;
+  }
+  return undefined;
+}
+
+function parseSwiggyImageUrl(val?: unknown): string | undefined {
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (!trimmed) return undefined;
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+      return trimmed;
+    }
+    return `https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_288,h_288,c_fit/${trimmed}`;
+  }
+  if (Array.isArray(val) && val.length > 0) {
+    return parseSwiggyImageUrl(val[0]);
   }
   return undefined;
 }
@@ -402,34 +450,86 @@ export function normalizeSwiggyInstamartProduct(raw: RawSwiggyInstamartProduct):
     throw new Error("Invalid raw Instamart product: expected object");
   }
 
-  const rawId = raw.id ?? raw.productId ?? raw.product_id;
+  const rawId = raw.id ?? raw.productId ?? raw.product_id ?? (raw as any).spin ?? (raw as any).spin_id;
   const idStr = rawId != null ? String(rawId).trim() : "";
   if (!idStr) {
     throw new Error("Invalid Instamart product: missing id");
   }
   const id = `insta-prod-${idStr}`;
 
-  const name = cleanString(raw.name ?? raw.display_name) || "Grocery Item";
-  const brand = cleanString(raw.brand);
+  const name = cleanString(
+    raw.name ??
+    raw.display_name ??
+    raw.title ??
+    raw.product_name ??
+    raw.productName
+  ) || "Grocery Item";
+  const brand = cleanString(raw.brand ?? raw.brand_name ?? raw.brandName);
 
-  let price = parseNumber(raw.price ?? raw.store_price ?? raw.offer_price);
+  // Price resolution: unpack nested price objects if present
+  let rawPriceVal: unknown = raw.price;
+  if (rawPriceVal && typeof rawPriceVal === "object") {
+    const pObj = rawPriceVal as Record<string, unknown>;
+    rawPriceVal = pObj.store_price ?? pObj.storePrice ?? pObj.offer_price ?? pObj.offerPrice ?? pObj.price;
+  }
+  let price = parseNumber(
+    rawPriceVal ??
+    raw.store_price ??
+    raw.storePrice ??
+    raw.offer_price ??
+    raw.offerPrice ??
+    raw.final_price ??
+    raw.finalPrice ??
+    (raw.price_in_paise ? Number(raw.price_in_paise) / 100 : undefined) ??
+    (raw.priceInPaise ? Number(raw.priceInPaise) / 100 : undefined)
+  );
   if (price != null && price <= 0) {
     price = undefined;
   }
-  const mrp = parseNumber(raw.mrp);
+
+  // MRP resolution: unpack nested mrp objects if present
+  let rawMrpVal: unknown = raw.mrp;
+  if (rawMrpVal && typeof rawMrpVal === "object") {
+    const mObj = rawMrpVal as Record<string, unknown>;
+    rawMrpVal = mObj.mrp ?? mObj.mrpPrice ?? mObj.price;
+  }
+  let mrp = parseNumber(
+    rawMrpVal ??
+    raw.mrpPrice ??
+    raw.mrp_price ??
+    (raw.price && typeof raw.price === "object" ? (raw.price as any).mrp : undefined)
+  );
+  if (mrp != null && mrp <= 0) {
+    mrp = undefined;
+  }
+
+  // Fallback price to MRP if selling price was missing, or vice-versa
+  if (price == null && mrp != null && mrp > 0) {
+    price = mrp;
+  }
 
   const availability = parseAvailability(raw.inStock ?? raw.in_stock, undefined, raw.inventory);
   const { classification, tags: dietaryTags } = parseDietaryClassification(raw.isVeg ?? raw.is_veg);
 
-  const category = cleanString(raw.category ?? raw.category_name);
+  const category = cleanString(raw.category ?? raw.category_name ?? raw.categoryName ?? raw.superCategory);
   const categoryTags: string[] = [];
   if (category) categoryTags.push(category);
 
-  const quantity = cleanString(raw.quantity ?? raw.weight);
+  const quantity = cleanString(raw.quantity ?? raw.weight ?? raw.unit ?? raw.pack_size ?? raw.packSize);
   const rating = parseNumber(raw.rating);
 
   const rawSpinId = raw.spin ?? raw.spin_id ?? raw.variant_id;
   const spinId = rawSpinId != null ? String(rawSpinId).trim() : undefined;
+
+  const rawImage =
+    raw.imageUrl ??
+    raw.image_url ??
+    raw.image ??
+    raw.images ??
+    raw.imageId ??
+    raw.image_id ??
+    raw.cloudinaryImageId;
+  const imageUrl = parseSwiggyImageUrl(rawImage);
 
   const allergens = Array.isArray(raw.allergens)
     ? raw.allergens.map((a) => cleanString(a)).filter((a): a is string => Boolean(a))
@@ -478,6 +578,7 @@ export function normalizeSwiggyInstamartProduct(raw: RawSwiggyInstamartProduct):
     quantity,
     mrp,
     rating,
+    imageUrl,
   };
 
   return NormalizedSwiggyCandidateSchema.parse({
@@ -567,6 +668,16 @@ export function normalizeSwiggyDineoutRestaurant(raw: RawSwiggyDineoutRestaurant
     goalSignals: undefined,
   };
 
+  const rawImage =
+    raw.imageUrl ??
+    raw.image_url ??
+    raw.image ??
+    raw.images ??
+    raw.imageId ??
+    raw.image_id ??
+    raw.cloudinaryImageId;
+  const imageUrl = parseSwiggyImageUrl(rawImage);
+
   const sourceMetadata: SwiggySourceMetadata = {
     source: "swiggy",
     domain: "dineout",
@@ -578,6 +689,7 @@ export function normalizeSwiggyDineoutRestaurant(raw: RawSwiggyDineoutRestaurant
     distance,
     availableSlots: availableSlots && availableSlots.length > 0 ? availableSlots : undefined,
     offers: offers && offers.length > 0 ? offers : undefined,
+    imageUrl,
   };
 
   return NormalizedSwiggyCandidateSchema.parse({

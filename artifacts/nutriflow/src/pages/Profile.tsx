@@ -298,7 +298,7 @@ export default function Profile() {
                       Wellness Score
                     </p>
                     <p className="text-base font-black text-emerald-600">
-                      {profile.wellnessScore || 84}%
+                      {profile.wellnessScore != null ? `${profile.wellnessScore}%` : "Active"}
                     </p>
                   </div>
                 </div>

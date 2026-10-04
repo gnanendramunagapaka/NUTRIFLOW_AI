@@ -23,6 +23,8 @@ const topBarPath = path.join(rootDir, "artifacts/nutriflow/src/components/layout
 const foodServicePath = path.join(rootDir, "artifacts/api-server/src/lib/foodRecommendationService.ts");
 const instamartServicePath = path.join(rootDir, "artifacts/api-server/src/lib/instamartRecommendationService.ts");
 const dineoutServicePath = path.join(rootDir, "artifacts/api-server/src/lib/dineoutRecommendationService.ts");
+const dineoutCardPath = path.join(rootDir, "artifacts/nutriflow/src/components/dineout/DineoutRestaurantCard.tsx");
+const bookingSheetPath = path.join(rootDir, "artifacts/nutriflow/src/components/dineout/DineoutBookingSheet.tsx");
 
 assert(fs.existsSync(hookPath), "use-recommendations.ts must exist");
 assert(fs.existsSync(cartHookPath), "use-cart.tsx must exist");
@@ -36,6 +38,8 @@ assert(fs.existsSync(topBarPath), "TopBar.tsx must exist");
 assert(fs.existsSync(foodServicePath), "foodRecommendationService.ts must exist");
 assert(fs.existsSync(instamartServicePath), "instamartRecommendationService.ts must exist");
 assert(fs.existsSync(dineoutServicePath), "dineoutRecommendationService.ts must exist");
+assert(fs.existsSync(dineoutCardPath), "DineoutRestaurantCard.tsx must exist");
+assert(fs.existsSync(bookingSheetPath), "DineoutBookingSheet.tsx must exist");
 
 const hookContent = fs.readFileSync(hookPath, "utf-8");
 const cartContent = fs.readFileSync(cartHookPath, "utf-8");
@@ -49,6 +53,8 @@ const topBarContent = fs.readFileSync(topBarPath, "utf-8");
 const foodServiceContent = fs.readFileSync(foodServicePath, "utf-8");
 const instamartServiceContent = fs.readFileSync(instamartServicePath, "utf-8");
 const dineoutServiceContent = fs.readFileSync(dineoutServicePath, "utf-8");
+const dineoutCardContent = fs.readFileSync(dineoutCardPath, "utf-8");
+const bookingSheetContent = fs.readFileSync(bookingSheetPath, "utf-8");
 
 interface Address {
   id: string;
@@ -100,23 +106,21 @@ assert(hookContent.includes('rawAddressId.toLowerCase() === "home" ||'),
   "use-recommendations.ts must reject placeholder IDs: home, work, mock");
 console.log("  ✓ 4. Placeholder IDs ('home', 'work', 'mock', hardcoded) are strictly rejected");
 
-// Test 5: User can change address ONLY on Home; TopBar does NOT provide selection/change control
-console.log("Test 5: User can change address on Home; TopBar has NO address switcher");
-assert(dashboardContent.includes("AddressSelectionPrompt") && dashboardContent.includes("setSelectedAddress"),
-  "Home must provide address selection UI allowing user to change address");
-assert(!topBarContent.includes("setSelectedAddress"),
-  "TopBar must NOT call setSelectedAddress; it must NOT provide address selection/switching capability");
-assert(!topBarContent.includes("Delivery location selector"),
-  "TopBar must NOT render an interactive delivery location selector button");
-console.log("  ✓ 5. Address selection UI strictly restricted to Home; TopBar has NO selection/switching control");
+// Test 5: User selects address in TopBar
+console.log("Test 5: TopBar provides interactive global address selection with real Swiggy addresses");
+assert(topBarContent.includes("setSelectedAddress") && topBarContent.includes("topbar-address-selector"),
+  "TopBar must provide interactive global address selector calling setSelectedAddress");
+assert(topBarContent.includes("Delivery Address"),
+  "TopBar dropdown must render Delivery Address header");
+console.log("  ✓ 5. TopBar provides interactive global address selection with real Swiggy addresses");
 
-// Test 6: Selected Home address becomes global active address
-console.log("Test 6: Selected Home address becomes global active address");
+// Test 6: Selected address becomes global active address
+console.log("Test 6: Selected address becomes global active address");
 assert(cartContent.includes("sessionStorage.setItem(\"nutriflow_selected_address_id\""),
   "Selected address must be stored in global session/state context");
 assert(hookContent.includes("const { selectedAddress } = useCart();"),
   "use-recommendations.ts must consume global selectedAddress from useCart()");
-console.log("  ✓ 6. Home selected address stored globally in useCart and session storage");
+console.log("  ✓ 6. Selected address stored globally in useCart and session storage");
 
 // Test 7: Food receives the same active address
 console.log("Test 7: Food receives the same active address");
@@ -137,26 +141,24 @@ console.log("  ✓ 8. Instamart inherits the global active address from useCart"
 // Test 9: Dineout receives the correct resolved location context
 console.log("Test 9: Dineout receives the correct resolved location context");
 assert(dineoutContent.includes("useDineoutLocation(selectedAddress)"),
-  "Dineout must resolve location context from selected Home address");
+  "Dineout must resolve location context from selected address");
 assert(dineoutHookContent.includes("resolveDineoutLocationFromHome"),
-  "use-dineout-location must map Home address to genuine Dineout location");
+  "use-dineout-location must map selected address to genuine Dineout location");
 assert(dineoutContent.includes("locationId: resolvedLocation?.id"),
   "Dineout recommendation hook must receive resolved locationId");
-console.log("  ✓ 9. Dineout receives resolved location context based on Home-selected address");
+console.log("  ✓ 9. Dineout receives resolved location context based on selected address");
 
-// Test 10: No address selector exists/gets added to Explore domains or TopBar
-console.log("Test 10: No address selector exists/gets added to Explore domains or TopBar");
+// Test 10: No separate address selector exists/gets added to Explore domains
+console.log("Test 10: No separate address selector exists/gets added to Explore domains");
 assert(!discoverContent.includes("AddressSelectionPrompt") && !discoverContent.includes("setSelectedAddress"),
   "Discover (Food) MUST NOT contain AddressSelectionPrompt or setSelectedAddress");
 assert(!instamartContent.includes("AddressSelectionPrompt") && !instamartContent.includes("setSelectedAddress"),
   "InstamartDomainView MUST NOT contain AddressSelectionPrompt or setSelectedAddress");
 assert(!dineoutContent.includes("AddressSelectionPrompt") && !dineoutContent.includes("setSelectedAddress"),
   "DineoutDomainView MUST NOT contain AddressSelectionPrompt or setSelectedAddress");
-assert(!topBarContent.includes("setSelectedAddress"),
-  "TopBar MUST NOT contain setSelectedAddress or address-changing control");
-assert(dashboardContent.includes("AddressSelectionPrompt") && dashboardContent.includes("setSelectedAddress"),
-  "Home Dashboard MUST remain the single, exclusive location for address selection and changing");
-console.log("  ✓ 10. Address selection UI strictly isolated to Home; 0 selectors in TopBar, Explore Food, Instamart, or Dineout");
+assert(topBarContent.includes("setSelectedAddress"),
+  "TopBar MUST contain setSelectedAddress as the single global address selector");
+console.log("  ✓ 10. Address selection strictly in TopBar; 0 separate selectors in Explore Food, Instamart, or Dineout");
 
 // Test 11: Changing Home address refreshes all recommendation domains
 console.log("Test 11: Changing Home address refreshes all recommendation domains");
@@ -175,14 +177,11 @@ console.log("  ✓ 12. Query cache keys are strictly keyed by address/location p
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n--- SECTION 2: HOME RECOMMENDATIONS TESTS (13 - 15) ---");
 
-// Test 13: Initial Home recommendations use Profile Context
-console.log("Test 13: Initial Home recommendations use Profile Context");
-assert(foodServiceContent.includes("determineFoodDiscoveryIntent"),
-  "Food recommendation service must compute discovery intent from Profile Context");
-assert(foodServiceContent.includes("profileContext.dietary.cuisinePreferences") ||
-       foodServiceContent.includes("profileContext.goals.primaryGoal"),
-  "Food service must consider cuisine preferences, goals, and dietary patterns");
-console.log("  ✓ 13. Initial Home recommendations use Profile Context for discovery intent");
+// Test 13: Phase 3 Live Discovery does not use deterministic scoring
+console.log("Test 13: Phase 3 Live Discovery does not use deterministic scoring");
+assert(foodServiceContent.includes("executeSwiggyDiscovery"),
+  "Food recommendation service must use executeSwiggyDiscovery for live discovery");
+console.log("  ✓ 13. Phase 3 Live Discovery uses executeSwiggyDiscovery without deterministic scoring");
 
 // Test 14: Home does not require a search
 console.log("Test 14: Home does not require a search");
@@ -219,11 +218,11 @@ assert(foodServiceContent.includes("request.query?.trim()"),
   "Backend prioritizes explicit query as retrieval intent");
 console.log("  ✓ 17. Explicit search overrides default discovery intent");
 
-// Test 18: Profile Context remains active after search
-console.log("Test 18: Profile Context remains active after search");
-assert(foodServiceContent.includes("executeSharedRecommendation(profileContext"),
-  "Food service passes profileContext into executeSharedRecommendation regardless of search query");
-console.log("  ✓ 18. Profile Context remains active for ranking and preference matching during search");
+// Test 18: Profile Context remains active for safety validation
+console.log("Test 18: Profile Context remains active for safety validation");
+assert(foodServiceContent.includes("executeSwiggyDiscovery(profileContext"),
+  "Food service passes profileContext into executeSwiggyDiscovery regardless of search query");
+console.log("  ✓ 18. Profile Context remains active for safety validation during search");
 
 // Test 19: Filters modify retrieval intent
 console.log("Test 19: Filters modify retrieval intent");
@@ -233,8 +232,8 @@ console.log("  ✓ 19. Category filters modify retrieval intent");
 
 // Test 20: Safety remains enforced
 console.log("Test 20: Safety remains enforced");
-assert(foodServiceContent.includes("executeSharedRecommendation"),
-  "Food service executes shared safety checks on all candidate meals/restaurants");
+assert(foodServiceContent.includes("executeSwiggyDiscovery"),
+  "Food service executes safety checks on all candidate meals/restaurants");
 console.log("  ✓ 20. Safety filters (allergies, dietary constraints, foodsToAvoid) strictly enforced");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -300,7 +299,19 @@ assert(dineoutContent.includes("isUnavailable"),
   "DineoutDomainView handles isUnavailable state");
 assert(dineoutContent.includes("Dineout restaurant discovery is currently unavailable for your selected Home address"),
   "Controlled state rendered when Dineout location cannot be mapped");
-console.log("  ✓ 28. Controlled failure state rendered when Dineout location cannot be resolved");
+assert(dineoutHookContent.includes("NEVER fall back to a location in a different city"),
+  "useDineoutLocation strictly prevents cross-city fallback");
+assert(!dineoutCardContent.includes("costForTwo || 1000"),
+  "DineoutRestaurantCard must not fabricate ₹1000 cost for two");
+assert(!bookingSheetContent.includes("costForTwo || 1000"),
+  "DineoutBookingSheet must not fabricate ₹1000 cost for two");
+assert(bookingSheetContent.includes("get_restaurant_details"),
+  "DineoutBookingSheet queries live get_restaurant_details MCP tool");
+assert(bookingSheetContent.includes("get_available_slots"),
+  "DineoutBookingSheet queries live get_available_slots MCP tool");
+assert(bookingSheetContent.includes("Walk-in Only Partner"),
+  "DineoutBookingSheet handles non-participating / walk-in only partners honestly");
+console.log("  ✓ 28. Controlled failure state rendered when Dineout location cannot be resolved and safety checks verified");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FALLBACK (Tests 29 - 32)
@@ -330,13 +341,13 @@ console.log("  ✓ 30. Fallback candidates are retrieved exclusively from live S
 
 // Test 31: Fallback still enforces safety
 console.log("Test 31: Fallback still enforces safety");
-assert(foodServiceContent.includes("executeSharedRecommendation(profileContext"),
-  "Food fallback candidates pass through Phase 2 Shared Recommendation Service");
-assert(instamartServiceContent.includes("executeSharedRecommendation(profileContext"),
-  "Instamart fallback candidates pass through Phase 2 Shared Recommendation Service");
-assert(dineoutServiceContent.includes("executeSharedRecommendation(profileContext"),
-  "Dineout fallback candidates pass through Phase 2 Shared Recommendation Service");
-console.log("  ✓ 31. Fallback candidates are strictly validated against Profile Context allergies, exclusions, and goals");
+assert(foodServiceContent.includes("executeSwiggyDiscovery(profileContext"),
+  "Food fallback candidates pass through Phase 3 Swiggy Discovery");
+assert(instamartServiceContent.includes("executeSwiggyDiscovery(profileContext"),
+  "Instamart fallback candidates pass through Phase 3 Swiggy Discovery");
+assert(dineoutServiceContent.includes("executeSwiggyDiscovery(profileContext"),
+  "Dineout fallback candidates pass through Phase 3 Swiggy Discovery");
+console.log("  ✓ 31. Fallback candidates are strictly validated against Profile Context allergies and hard exclusions");
 
 // Test 32: Fallback never uses mock/synthetic data
 console.log("Test 32: Fallback never uses mock/synthetic data");

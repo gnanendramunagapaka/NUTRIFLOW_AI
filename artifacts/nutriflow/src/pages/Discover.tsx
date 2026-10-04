@@ -172,9 +172,9 @@ export default function Discover() {
             imageUrl: meal.imageUrl || "",
             calories: meal.calories,
             protein: meal.protein,
-            carbs: meal.carbs || 12,
-            fat: meal.fat || 10,
-            healthScore: meal.healthScore || meal.health_score || 8.5,
+            carbs: meal.carbs,
+            fat: meal.fat,
+            healthScore: meal.healthScore || meal.health_score,
             price: meal.price,
           }),
         });
@@ -233,7 +233,7 @@ export default function Discover() {
         deliveryTime: undefined,
         costForTwo: meta?.costForTwo,
         distance: meta?.distance,
-        imageUrl: null,
+        imageUrl: meta?.imageUrl || null,
         isOpen: c.availability !== "unavailable",
         tags: c.contextTags || [],
       };
@@ -260,7 +260,7 @@ export default function Discover() {
         restaurantName: selectedRestaurant?.name || meta?.restaurantName,
         cuisine: selectedRestaurant?.cuisine,
         isVegetarian: isVeg,
-        healthScore: rec.totalScore ? Number((rec.totalScore / 10).toFixed(1)) : 8.5,
+        healthScore: undefined,
       };
     });
   }, [menuRecData, selectedRestaurant]);
@@ -377,15 +377,9 @@ export default function Discover() {
             <div className="space-y-1">
               <h3 className="text-base font-bold text-foreground">No Delivery Address Selected</h3>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                Please select your delivery address on the Home page to get personalized live food recommendations.
+                Please select your delivery address from the TopBar above to discover live restaurants and menus available in your area.
               </p>
             </div>
-            <Link href="/">
-              <SecondaryButton size="sm" className="text-xs gap-1.5 mt-2">
-                <Home className="h-3.5 w-3.5" />
-                <span>Go to Home</span>
-              </SecondaryButton>
-            </Link>
           </AppCard>
         ) : foodRecError ? (
           <AppCard className="p-8 sm:p-12 text-center space-y-4">

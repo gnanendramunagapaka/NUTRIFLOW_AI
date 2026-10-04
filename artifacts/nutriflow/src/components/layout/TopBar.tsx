@@ -33,7 +33,7 @@ interface TopBarProps {
 export function TopBar({ title, className }: TopBarProps) {
   const [location, setLocation] = useLocation();
   const { user, logout } = useAuth();
-  const { itemCount, setIsCartOpen, selectedAddress } = useCart();
+  const { itemCount, setIsCartOpen, selectedAddress, addresses, setSelectedAddress, isLoadingAddresses } = useCart();
 
   // Desktop navigation items (canonical 4 destinations)
   const navItems = [
@@ -118,24 +118,91 @@ export function TopBar({ title, className }: TopBarProps) {
 
         {/* Right: Actions (Address Selector, Cart & Avatar/Login) */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Swiggy Delivery Location Display (Read-Only context indicator, NOT an address selector) */}
+          {/* Swiggy Delivery Location Dropdown Selector */}
           {user && (
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-border/70 bg-card/60 text-left max-w-[150px] sm:max-w-[210px] shadow-2xs select-none"
-              aria-label="Active delivery location"
-            >
-              <MapPin className="h-3.5 w-3.5 text-[#FC8019] shrink-0" />
-              <div className="flex flex-col min-w-0">
-                <span className="text-[11px] font-bold text-foreground truncate leading-tight">
-                  {selectedAddress ? selectedAddress.label : "No Address Selected"}
-                </span>
-                {selectedAddress && (
-                  <span className="text-[9px] text-muted-foreground truncate hidden sm:inline-block leading-tight">
-                    {selectedAddress.address}
-                  </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  id="topbar-address-selector"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-border/70 bg-card/60 hover:bg-muted/60 transition-colors text-left max-w-[160px] sm:max-w-[240px] shadow-2xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Select delivery address"
+                >
+                  <MapPin className="h-3.5 w-3.5 text-[#FC8019] shrink-0" />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-[11px] font-bold text-foreground truncate leading-tight">
+                      {selectedAddress ? selectedAddress.label : (isLoadingAddresses ? "Loading..." : "Select Address")}
+                    </span>
+                    {selectedAddress?.address ? (
+                      <span className="text-[9px] text-muted-foreground truncate hidden sm:inline-block leading-tight">
+                        {selectedAddress.address}
+                      </span>
+                    ) : null}
+                  </div>
+                  <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="start"
+                className="w-72 sm:w-80 rounded-xl mt-2 p-1.5 shadow-md bg-card border border-border/80"
+              >
+                <DropdownMenuLabel className="p-2 font-normal">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-foreground">Delivery Address</span>
+                    <span className="text-[10px] text-orange-600 font-semibold bg-orange-500/10 px-2 py-0.5 rounded-full">
+                      Swiggy
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Select where you want your orders delivered
+                  </p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {isLoadingAddresses ? (
+                  <div className="p-3 text-center text-xs text-muted-foreground">
+                    Loading saved addresses...
+                  </div>
+                ) : addresses.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-muted-foreground">
+                    No saved addresses found on your Swiggy account
+                  </div>
+                ) : (
+                  addresses.map((addr) => {
+                    const isSelected = selectedAddress?.id === addr.id;
+                    return (
+                      <DropdownMenuItem
+                        key={addr.id}
+                        className={cn(
+                          "p-2.5 cursor-pointer rounded-lg text-xs flex items-start justify-between gap-2 hover:bg-muted/80 focus:bg-muted",
+                          isSelected && "bg-primary/5 font-semibold text-primary"
+                        )}
+                        onClick={() => setSelectedAddress(addr)}
+                      >
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          <MapPin className={cn("h-4 w-4 shrink-0 mt-0.5", isSelected ? "text-primary" : "text-muted-foreground")} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-foreground truncate">{addr.label}</span>
+                              {addr.isDefault && (
+                                <span className="text-[9px] bg-muted px-1.5 py-0.2 rounded font-normal text-muted-foreground">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            {addr.address && (
+                              <p className="text-[10px] text-muted-foreground line-clamp-2 mt-0.5">
+                                {addr.address}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        {isSelected && <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />}
+                      </DropdownMenuItem>
+                    );
+                  })
                 )}
-              </div>
-            </div>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {/* Cart Drawer Trigger */}

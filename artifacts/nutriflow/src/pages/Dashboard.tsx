@@ -29,13 +29,13 @@ import {
   CalendarCheck,
   Check,
   Star,
+  MapPin,
 } from "lucide-react";
 
 import { useAuth } from "@/hooks/use-auth";
 import { useCart } from "@/hooks/use-cart";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendations, type FoodRecommendationResponse } from "@/hooks/use-recommendations";
-import { AddressSelectionPrompt } from "@/components/address/AddressSelectionPrompt";
 import {
   useListRestaurants,
   useGetGroceryList,
@@ -135,9 +135,9 @@ export default function Dashboard() {
             imageUrl: meal.imageUrl || "",
             calories: meal.calories,
             protein: meal.protein,
-            carbs: meal.carbs || 12,
-            fat: meal.fat || 10,
-            healthScore: meal.healthScore || meal.health_score || 8.5,
+            carbs: meal.carbs,
+            fat: meal.fat,
+            healthScore: meal.healthScore || meal.health_score,
             price: meal.price,
           }),
         });
@@ -159,9 +159,9 @@ export default function Dashboard() {
       type: "meal",
       calories: meal.calories,
       protein: meal.protein,
-      carbs: meal.carbs || 12,
-      fat: meal.fat || 10,
-      healthScore: meal.healthScore || meal.health_score || 8.5,
+      carbs: meal.carbs,
+      fat: meal.fat,
+      healthScore: meal.healthScore || meal.health_score,
       imageUrl: meal.imageUrl,
       cuisine: meal.cuisine,
       description: meal.description,
@@ -211,16 +211,11 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* User Score & Streak Badges */}
+          {/* User Streak Badge */}
           <div className="flex items-center gap-2.5 flex-wrap">
             <div className="flex items-center gap-2 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 px-3.5 py-1.5 rounded-full border border-emerald-500/20 text-xs font-semibold shadow-2xs">
               <CalendarCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               <span>{streakCount} Day Streak</span>
-            </div>
-
-            <div className="flex items-center gap-2 bg-primary/10 text-primary px-3.5 py-1.5 rounded-full border border-primary/20 text-xs font-semibold shadow-2xs">
-              <Activity className="h-4 w-4 text-primary" />
-              <span>Wellness Score: {user?.wellnessScore ?? 78}%</span>
             </div>
           </div>
         </header>
@@ -428,8 +423,8 @@ export default function Dashboard() {
             {/* ─── 4. Recommended Food Section ─── */}
             <section className="space-y-4 pt-2">
               <SectionHeader
-                title="Curated Meals For You"
-                subtitle="Clean, balanced meals aligned with your nutritional preferences"
+                title="Nearby Restaurants & Meals"
+                subtitle={selectedAddress ? `Live discovery from Swiggy near ${selectedAddress.label}` : "Live discovery from Swiggy partner kitchens"}
                 action={
                   <Link href="/discover">
                     <Button variant="ghost" size="sm" className="text-xs font-semibold gap-1 text-primary">
@@ -446,16 +441,16 @@ export default function Dashboard() {
                     <Skeleton key={i} className="h-64 rounded-2xl" />
                   ))}
                 </div>
-              ) : (!selectedAddress && addresses.length === 0) || Boolean(recError?.message?.includes("No saved delivery addresses")) ? (
+              ) : !selectedAddress ? (
                 <AppCard className="p-8 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">
-                    <Utensils className="h-6 w-6" />
+                  <div className="w-12 h-12 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                    <MapPin className="h-6 w-6 text-[#FC8019]" />
                   </div>
                   <h4 className="text-sm font-bold text-foreground">
-                    No Saved Delivery Address
+                    Select a Delivery Address
                   </h4>
                   <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    Add a delivery address to your Swiggy account to discover nearby restaurants and receive live recommendations.
+                    Choose your delivery location from the TopBar above to discover live restaurants and menus available in your area.
                   </p>
                 </AppCard>
               ) : recError ? (
@@ -464,10 +459,10 @@ export default function Dashboard() {
                     <Utensils className="h-6 w-6" />
                   </div>
                   <h4 className="text-sm font-bold text-foreground">
-                    Unable to load recommendations
+                    Unable to load live restaurants
                   </h4>
                   <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    {recError.message || "Failed to reach Swiggy recommendation service. Please try again."}
+                    {recError.message || "Failed to reach Swiggy Food service. Please try again."}
                   </p>
                   <SecondaryButton size="sm" onClick={() => refetchRecs()}>
                     Retry
@@ -479,14 +474,14 @@ export default function Dashboard() {
                     const c = rec.candidate;
                     const meta = c.sourceMetadata;
                     const mealId = meta?.restaurantId || meta?.menuItemId || c.id;
-                    const mealName = c.name || "Curated Pick";
+                    const mealName = c.name || "Restaurant Partner";
                     const mealPrice = c.price || meta?.costForTwo || 0;
                     const isVeg =
                       c.safetyResult?.status === "eligible" &&
                       (c.categoryTags?.includes("vegetarian") || !mealName.toLowerCase().includes("chicken"));
-                    const healthScore = rec.totalScore ? Number((rec.totalScore / 10).toFixed(1)) : 8.5;
+                    const rating = meta?.rating;
                     const cuisine = c.categoryTags?.[0] || c.contextTags?.[0] || "Wholesome";
-                    const description = rec.explanation || c.categoryTags?.join(", ") || "Personalized choice aligned with your nutritional preferences";
+                    const description = c.categoryTags?.join(", ") || c.contextTags?.join(", ") || "Available on Swiggy";
 
                     const isSaved = savedMeals.some(
                       (sm: any) => sm.mealId === mealId || sm.name === mealName || sm.meal_id === mealId
@@ -506,17 +501,17 @@ export default function Dashboard() {
                           {/* Save Heart Button */}
                           <button
                             type="button"
-                            onClick={() => toggleSaveMeal({ id: mealId, name: mealName, price: mealPrice, healthScore, cuisine, description })}
+                            onClick={() => toggleSaveMeal({ id: mealId, name: mealName, price: mealPrice, rating, cuisine, description })}
                             className="absolute top-2.5 right-2.5 p-2 rounded-full bg-background/90 text-rose-500 shadow-xs hover:scale-110 transition-transform cursor-pointer"
                             aria-label={isSaved ? "Remove from saved" : "Save meal"}
                           >
                             <Heart className="h-4 w-4" fill={isSaved ? "currentColor" : "none"} />
                           </button>
 
-                          {healthScore && (
+                          {rating != null && rating > 0 && (
                             <div className="absolute bottom-2 left-2 bg-background/90 backdrop-blur-xs text-[10px] font-bold text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-2xs">
                               <Star className="h-3 w-3 fill-emerald-500 text-emerald-500" />
-                              <span>{healthScore}/10 Health</span>
+                              <span>{rating.toFixed(1)} ★</span>
                             </div>
                           )}
                         </div>
@@ -551,7 +546,7 @@ export default function Dashboard() {
                                   Diet
                                 </span>
                                 <span className="font-bold text-foreground">
-                                  {isVeg ? "Vegetarian" : "Verified Clean"}
+                                  {isVeg ? "Vegetarian" : "Non-Vegetarian"}
                                 </span>
                               </div>
                             </div>
@@ -563,7 +558,6 @@ export default function Dashboard() {
                                 name: mealName,
                                 price: mealPrice,
                                 type: "meal",
-                                healthScore,
                                 cuisine,
                                 description,
                               })}
@@ -578,39 +572,17 @@ export default function Dashboard() {
                     );
                   })}
                 </div>
-              ) : (foodRecData?.clarificationNeeded || (!selectedAddress && (foodRecData?.availableAddresses?.length ?? addresses.length) > 1)) ? (
-                <AddressSelectionPrompt
-                  domain="food"
-                  availableAddresses={foodRecData?.availableAddresses || addresses}
-                  selectedAddressId={selectedAddress?.id}
-                  onSelectAddress={(addr) => setSelectedAddress(addr)}
-                />
-              ) : (addresses.length === 0 && (!foodRecData?.availableAddresses || foodRecData.availableAddresses.length === 0)) ? (
-                <AppCard className="p-8 text-center space-y-3">
-                  <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">
-                    <Utensils className="h-6 w-6" />
-                  </div>
-                  <h4 className="text-sm font-bold text-foreground">
-                    No Saved Delivery Address
-                  </h4>
-                  <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    Add a delivery address to your Swiggy account to discover nearby restaurants and receive live recommendations.
-                  </p>
-                </AppCard>
               ) : (
                 <AppCard className="p-8 text-center space-y-3">
                   <div className="w-12 h-12 rounded-2xl bg-muted/60 flex items-center justify-center mx-auto text-muted-foreground">
                     <Utensils className="h-6 w-6" />
                   </div>
                   <h4 className="text-sm font-bold text-foreground">
-                    No Live Recommendations Found Nearby
+                    No Live Restaurants Available
                   </h4>
                   <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    No partner food picks are currently available for your delivery location. Explore more in Discover.
+                    No open partner kitchens found for your active delivery location. Try switching your address in the top bar.
                   </p>
-                  <Link href="/discover">
-                    <SecondaryButton size="sm">Explore Available Meals</SecondaryButton>
-                  </Link>
                 </AppCard>
               )}
             </section>
@@ -688,7 +660,7 @@ export default function Dashboard() {
               </div>
 
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Have a question about what to eat next, daily macros, or finding certified clean food?
+                Have a question about what to eat next, daily macros, or meal planning?
               </p>
 
               <div className="space-y-1.5">
@@ -768,7 +740,7 @@ export default function Dashboard() {
               {restaurants && restaurants.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-xs text-muted-foreground">
-                    {restaurants.length} partner restaurants serving certified wholesome dishes nearby.
+                    {restaurants.length} partner dining destinations available nearby.
                   </p>
                   <div className="space-y-1.5">
                     {restaurants.slice(0, 2).map((r: any) => (
@@ -780,7 +752,7 @@ export default function Dashboard() {
                           {r.name}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
-                          {r.cuisine || "Healthy"}
+                          {r.cuisine || "Dining"}
                         </span>
                       </div>
                     ))}
@@ -788,7 +760,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Discover partner restaurants serving certified clean meals tailored to your dietary goals.
+                  Discover partner restaurants and dining destinations near your location.
                 </p>
               )}
 

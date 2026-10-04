@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sheet,
   SheetContent,
@@ -14,6 +15,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Star,
   Clock,
@@ -50,20 +52,98 @@ export function DineoutBookingSheet({
 
   const [step, setStep] = useState<"slots" | "review">("slots");
   const [selectedDate, setSelectedDate] = useState("Today");
-  const [selectedSlot, setSelectedSlot] = useState("7:30 PM");
+  const [selectedSlot, setSelectedSlot] = useState("");
   const [selectedGuests, setSelectedGuests] = useState(2);
   const [showFoundationModal, setShowFoundationModal] = useState(false);
 
+  // 1. Live Restaurant Details via Swiggy Dineout MCP get_restaurant_details
+  const { data: detailsData } = useQuery({
+    queryKey: ["dineout-restaurant-details", restaurant?.id],
+    queryFn: async () => {
+      if (!restaurant?.id) return null;
+      const res = await fetch("/api/swiggy/mcp/dineout/get_restaurant_details", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ restaurant_id: String(restaurant.id) }),
+      }).catch(() => null);
+      if (!res || !res.ok) return null;
+      const json = await res.json().catch(() => null);
+      const content = json?.result?.structuredContent ?? json?.structuredContent ?? json?.result ?? json;
+      return (content?.restaurant || content) as Record<string, any> | null;
+    },
+    enabled: isOpen && Boolean(restaurant?.id),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // 2. Live Available Slots via Swiggy Dineout MCP get_available_slots
+  const { data: mcpSlots, isLoading: isLoadingSlots } = useQuery<string[]>({
+    queryKey: ["dineout-available-slots", restaurant?.id, selectedDate],
+    queryFn: async () => {
+      if (!restaurant?.id) return [];
+      const res = await fetch("/api/swiggy/mcp/dineout/get_available_slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          restaurant_id: String(restaurant.id),
+          date: selectedDate === "Today" ? undefined : selectedDate,
+        }),
+      }).catch(() => null);
+      if (!res || !res.ok) return [];
+      const json = await res.json().catch(() => null);
+      const content = json?.result?.structuredContent ?? json?.structuredContent ?? json?.result ?? json;
+      const rawSlots = content?.slots || content?.available_slots || content?.availableSlots || (Array.isArray(content) ? content : []);
+      return Array.isArray(rawSlots) ? rawSlots.map(String).filter(Boolean) : [];
+    },
+    enabled: isOpen && Boolean(restaurant?.id),
+    staleTime: 60 * 1000,
+  });
+
+  // Effective available slots from live MCP, or fallback to restaurant card metadata
+  const effectiveSlots: string[] = useMemo(() => {
+    if (mcpSlots && mcpSlots.length > 0) return mcpSlots;
+    if (Array.isArray((restaurant as any)?.availableSlots) && (restaurant as any).availableSlots.length > 0) {
+      return (restaurant as any).availableSlots;
+    }
+    return [];
+  }, [mcpSlots, restaurant]);
+
+  const hasSlots = effectiveSlots.length > 0;
+
+  // Auto-select first real slot if available
+  useEffect(() => {
+    if (hasSlots) {
+      if (!selectedSlot || !effectiveSlots.includes(selectedSlot)) {
+        setSelectedSlot(effectiveSlots[0]);
+      }
+    } else {
+      setSelectedSlot("");
+    }
+  }, [hasSlots, effectiveSlots, selectedSlot]);
+
   if (!restaurant) return null;
 
+  // Real merged details
+  const effectiveName = detailsData?.name || restaurant.name;
+  const effectiveCuisine =
+    (Array.isArray(detailsData?.cuisine)
+      ? detailsData?.cuisine.join(", ")
+      : detailsData?.cuisine) || restaurant.cuisine;
+  const effectiveRating = detailsData?.avg_rating ?? detailsData?.rating ?? restaurant.rating;
+  const effectiveCostForTwo = detailsData?.costForTwo ?? detailsData?.cost_for_two ?? restaurant.costForTwo;
+  const effectiveLocality = detailsData?.locality ?? detailsData?.location ?? restaurant.locality;
+  const effectiveImageUrl = detailsData?.imageUrl ?? detailsData?.image ?? restaurant.imageUrl;
+  const effectiveOfferText =
+    (Array.isArray(detailsData?.offers) ? detailsData?.offers[0] : detailsData?.offers) ||
+    restaurant.offerText;
+
   const dates = [
-    { label: "Today", sub: "Oct 2" },
-    { label: "Tomorrow", sub: "Oct 3" },
-    { label: "Sunday", sub: "Oct 4" },
+    { label: "Today", sub: "Today" },
+    { label: "Tomorrow", sub: "Tomorrow" },
+    { label: "Upcoming", sub: "Later" },
   ];
 
-  const lunchSlots = ["12:30 PM", "1:00 PM", "1:30 PM", "2:00 PM"];
-  const dinnerSlots = ["7:00 PM", "7:30 PM", "8:00 PM", "8:30 PM", "9:00 PM"];
   const guestOptions = [1, 2, 4, 6, 8];
 
   const handleProceedToReview = () => {
@@ -88,16 +168,16 @@ export function DineoutBookingSheet({
         >
           {/* Banner Image */}
           <div className="relative aspect-[16/9] bg-muted shrink-0 overflow-hidden">
-            {restaurant.imageUrl ? (
+            {effectiveImageUrl ? (
               <img
-                src={restaurant.imageUrl}
-                alt={restaurant.name}
+                src={effectiveImageUrl}
+                alt={effectiveName}
                 className="w-full h-full object-cover"
               />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center bg-muted/60 text-muted-foreground">
                 <UtensilsCrossed className="h-8 w-8 text-muted-foreground/60 mb-1" />
-                <span className="text-xs font-semibold">{restaurant.name}</span>
+                <span className="text-xs font-semibold">{effectiveName}</span>
               </div>
             )}
 
@@ -132,30 +212,32 @@ export function DineoutBookingSheet({
                 ⚡ Powered by Swiggy Dineout
               </span>
               <SheetTitle className="text-lg sm:text-xl font-extrabold text-white leading-tight">
-                {restaurant.name}
+                {effectiveName}
               </SheetTitle>
-              <p className="text-xs text-white/80">{restaurant.cuisine}</p>
+              <p className="text-xs text-white/80">{effectiveCuisine}</p>
             </div>
           </div>
 
           {/* Quick Stats Bar */}
           <div className="px-4 py-2.5 border-b border-border/70 bg-card flex items-center justify-between text-xs text-muted-foreground shrink-0">
             <div className="flex items-center gap-3">
-              {restaurant.rating !== undefined && (
+              {effectiveRating !== undefined && (
                 <span className="flex items-center gap-1 font-bold text-foreground">
                   <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
-                  <span>{restaurant.rating}</span>
+                  <span>{effectiveRating}</span>
                 </span>
               )}
-              <span className="font-semibold text-foreground">
-                ₹{restaurant.costForTwo || 1000} for two
-              </span>
+              {effectiveCostForTwo != null && Number(effectiveCostForTwo) > 0 && (
+                <span className="font-semibold text-foreground">
+                  ₹{effectiveCostForTwo} for two
+                </span>
+              )}
             </div>
 
-            {restaurant.locality && (
+            {effectiveLocality && (
               <div className="flex items-center gap-1 truncate max-w-[150px]">
                 <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{restaurant.locality}</span>
+                <span className="truncate">{effectiveLocality}</span>
               </div>
             )}
           </div>
@@ -165,7 +247,7 @@ export function DineoutBookingSheet({
             {step === "slots" ? (
               <div className="space-y-6 pb-6 text-left">
                 {/* Active Offers */}
-                {restaurant.offerText && (
+                {effectiveOfferText && (
                   <div className="bg-amber-500/10 border border-amber-500/20 p-3.5 rounded-2xl flex items-start gap-2.5">
                     <Tag className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                     <div className="text-xs space-y-0.5">
@@ -173,7 +255,7 @@ export function DineoutBookingSheet({
                         Special Dining Offer
                       </span>
                       <p className="text-muted-foreground leading-relaxed">
-                        {restaurant.offerText}
+                        {effectiveOfferText}
                       </p>
                     </div>
                   </div>
@@ -230,26 +312,29 @@ export function DineoutBookingSheet({
                   </div>
                 </div>
 
-                {/* 3. Available Slots */}
+                {/* 3. Available Slots (or Walk-in Only Partner) */}
                 <div className="space-y-3">
                   <label className="text-xs font-bold text-foreground uppercase tracking-wide flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-primary" />
                     <span>3. Available Table Slots</span>
                   </label>
 
-                  {/* Lunch */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-semibold text-muted-foreground block">
-                      Lunch Slots
-                    </span>
-                    <div className="grid grid-cols-4 gap-2">
-                      {lunchSlots.map((slot) => (
+                  {isLoadingSlots ? (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      <Skeleton className="h-9 w-full rounded-xl" />
+                      <Skeleton className="h-9 w-full rounded-xl" />
+                      <Skeleton className="h-9 w-full rounded-xl" />
+                      <Skeleton className="h-9 w-full rounded-xl" />
+                    </div>
+                  ) : hasSlots ? (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {effectiveSlots.map((slot) => (
                         <button
                           key={slot}
                           type="button"
                           onClick={() => setSelectedSlot(slot)}
                           className={cn(
-                            "py-2 px-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer shadow-2xs",
+                            "py-2 px-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer shadow-2xs text-center",
                             selectedSlot === slot
                               ? "bg-primary/10 border-primary text-primary font-bold shadow-xs"
                               : "bg-card border-border/80 text-foreground hover:bg-muted"
@@ -259,31 +344,17 @@ export function DineoutBookingSheet({
                         </button>
                       ))}
                     </div>
-                  </div>
-
-                  {/* Dinner */}
-                  <div className="space-y-1.5 pt-1">
-                    <span className="text-[11px] font-semibold text-muted-foreground block">
-                      Dinner Slots
-                    </span>
-                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                      {dinnerSlots.map((slot) => (
-                        <button
-                          key={slot}
-                          type="button"
-                          onClick={() => setSelectedSlot(slot)}
-                          className={cn(
-                            "py-2 px-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer shadow-2xs",
-                            selectedSlot === slot
-                              ? "bg-primary/10 border-primary text-primary font-bold shadow-xs"
-                              : "bg-card border-border/80 text-foreground hover:bg-muted"
-                          )}
-                        >
-                          {slot}
-                        </button>
-                      ))}
+                  ) : (
+                    <div className="bg-muted/40 border border-border/80 p-4 rounded-2xl space-y-2">
+                      <div className="flex items-center gap-2 text-foreground font-semibold text-xs">
+                        <UtensilsCrossed className="h-4 w-4 text-amber-600" />
+                        <span>Walk-in Only Partner</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        This restaurant currently accepts walk-in dining without online table booking slots through Swiggy Dineout.
+                      </p>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Informative Disclaimer */}
@@ -314,14 +385,14 @@ export function DineoutBookingSheet({
                         Restaurant
                       </span>
                       <h5 className="text-sm font-bold text-foreground mt-0.5">
-                        {restaurant.name}
+                        {effectiveName}
                       </h5>
-                      <p className="text-muted-foreground">{restaurant.cuisine}</p>
+                      <p className="text-muted-foreground">{effectiveCuisine}</p>
                     </div>
-                    {restaurant.rating !== undefined && (
+                    {effectiveRating !== undefined && (
                       <span className="flex items-center gap-1 font-bold text-foreground bg-muted/80 px-2 py-0.5 rounded-md">
                         <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
-                        <span>{restaurant.rating}</span>
+                        <span>{effectiveRating}</span>
                       </span>
                     )}
                   </div>
@@ -355,15 +426,15 @@ export function DineoutBookingSheet({
                       <span className="text-[10px] text-muted-foreground font-semibold block">Location</span>
                       <span className="font-bold text-foreground text-sm flex items-center gap-1 mt-0.5 truncate">
                         <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
-                        <span className="truncate">{restaurant.locality || "Bengaluru"}</span>
+                        <span className="truncate">{effectiveLocality || "Local Venue"}</span>
                       </span>
                     </div>
                   </div>
 
-                  {restaurant.offerText && (
+                  {effectiveOfferText && (
                     <div className="pt-2 border-t border-border/50 flex items-center gap-2 text-amber-800 dark:text-amber-400 font-semibold">
                       <Tag className="h-3.5 w-3.5 text-amber-600" />
-                      <span>{restaurant.offerText}</span>
+                      <span>{effectiveOfferText}</span>
                     </div>
                   )}
                 </div>
@@ -385,13 +456,24 @@ export function DineoutBookingSheet({
           {/* Footer Action */}
           <div className="p-4 border-t border-border/70 bg-background/95 backdrop-blur-xs">
             {step === "slots" ? (
-              <PrimaryButton
-                onClick={handleProceedToReview}
-                className="w-full h-11 text-xs font-bold gap-2 bg-amber-600 hover:bg-amber-700"
-              >
-                <UtensilsCrossed className="h-4 w-4" />
-                <span>Review Reservation ({selectedGuests} Guests • {selectedSlot})</span>
-              </PrimaryButton>
+              hasSlots ? (
+                <PrimaryButton
+                  onClick={handleProceedToReview}
+                  disabled={!selectedSlot}
+                  className="w-full h-11 text-xs font-bold gap-2 bg-amber-600 hover:bg-amber-700"
+                >
+                  <UtensilsCrossed className="h-4 w-4" />
+                  <span>Review Reservation ({selectedGuests} Guests • {selectedSlot})</span>
+                </PrimaryButton>
+              ) : (
+                <SecondaryButton
+                  disabled
+                  className="w-full h-11 text-xs font-bold gap-2 opacity-70 cursor-not-allowed"
+                >
+                  <UtensilsCrossed className="h-4 w-4" />
+                  <span>Walk-in Partner Only (No Online Slots)</span>
+                </SecondaryButton>
+              )
             ) : (
               <PrimaryButton
                 onClick={handleContinueBooking}
@@ -424,7 +506,7 @@ export function DineoutBookingSheet({
           <div className="bg-muted/40 p-3.5 rounded-2xl text-xs space-y-1 text-left border border-border/60">
             <div className="flex justify-between font-semibold">
               <span className="text-muted-foreground">Restaurant:</span>
-              <span className="text-foreground">{restaurant.name}</span>
+              <span className="text-foreground">{effectiveName}</span>
             </div>
             <div className="flex justify-between font-semibold">
               <span className="text-muted-foreground">Time & Guests:</span>
