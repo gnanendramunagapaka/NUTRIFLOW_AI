@@ -120,7 +120,9 @@ export interface RawProfileInput {
   weight?: number | null;
   height?: number | null;
   goal?: string | null;
+  secondaryGoals?: string[] | null;
   dietaryPreferences?: string[] | null;
+  cuisinePreferences?: string[] | null;
   allergies?: string[] | null;
   workoutFrequency?: string | null;
   waterIntake?: string | null;
@@ -145,6 +147,64 @@ const KNOWN_DIETARY_PATTERNS = new Set([
   "no specific preference",
 ]);
 
+/**
+ * Known nutrition / dietary target preferences (e.g. macro goals, health philosophies)
+ * that must be mapped to dietary/nutrition preferences (secondaryGoals), and NEVER to cuisine preferences.
+ */
+const KNOWN_NUTRITION_PREFERENCES = new Set([
+  "high protein",
+  "high-protein",
+  "high-protein bowls",
+  "high protein bowls",
+  "protein rich",
+  "protein",
+  "keto",
+  "keto friendly",
+  "ketogenic",
+  "low carb",
+  "low-carb",
+  "low fat",
+  "low-fat",
+  "low calorie",
+  "calorie conscious",
+  "balanced",
+  "balanced healthy eating",
+  "healthy eating",
+  "clean eating",
+  "fiber rich",
+  "high fiber",
+  "low sugar",
+  "sugar free",
+  "diabetic friendly",
+  "organic",
+  "gluten-free",
+  "dairy-free",
+]);
+
+/**
+ * Pure helper to determine if a string represents a nutrition/dietary target rather than a cultural cuisine.
+ */
+export function isNutritionPreference(val: string): boolean {
+  if (typeof val !== "string") return false;
+  const lower = val.toLowerCase().trim();
+  if (KNOWN_NUTRITION_PREFERENCES.has(lower)) {
+    return true;
+  }
+  // Generic token matching for common nutritional keywords
+  if (
+    lower.includes("protein") ||
+    lower.includes("keto") ||
+    lower.includes("carb") ||
+    lower.includes("calorie") ||
+    (lower.includes("fat") && !lower.includes("fatayer")) ||
+    lower.includes("fiber") ||
+    lower.includes("sugar")
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // ─── 4. Profile Context Builder ───────────────────────────────────────────────
 
 /**
@@ -153,7 +213,7 @@ const KNOWN_DIETARY_PATTERNS = new Set([
  * Rules:
  * 1. Preserves actual stored values without fabricating missing data.
  * 2. Missing optional values produce explicit empty/null representation (e.g., foodsToAvoid: []).
- * 3. Untangles dietary pattern from cuisine preferences.
+ * 3. Untangles dietary pattern, nutrition preferences, and cuisine preferences.
  * 4. Filters sentinel values such as "None" from allergies.
  * 5. Contains no medical diagnosis logic, no BMI calculations, and no recommendation scoring.
  */
@@ -175,11 +235,39 @@ export function buildProfileContextFromProfile(input?: RawProfileInput | null): 
       : null;
 
   const primaryGoal = (input?.goal || "").trim() || "Stay Healthy";
+  const secondaryGoals: string[] = [];
 
-  // Untangle dietary pattern and cuisine preferences from raw dietaryPreferences array
+  // Seed secondaryGoals from explicit input if supplied
+  if (Array.isArray(input?.secondaryGoals)) {
+    for (const g of input.secondaryGoals) {
+      if (typeof g === "string" && g.trim()) {
+        const trimmed = g.trim();
+        if (!secondaryGoals.includes(trimmed)) {
+          secondaryGoals.push(trimmed);
+        }
+      }
+    }
+  }
+
+  // Untangle dietary pattern, nutrition targets, and cuisine preferences from raw dietaryPreferences array
   const rawDietary = Array.isArray(input?.dietaryPreferences) ? input.dietaryPreferences : [];
   let dietaryPattern: string | null = null;
   const cuisinePreferences: string[] = [];
+
+  // Include explicit cuisinePreferences if provided on input (ensuring no nutrition/dietary pattern leakage)
+  if (Array.isArray(input?.cuisinePreferences)) {
+    for (const c of input.cuisinePreferences) {
+      if (typeof c === "string" && c.trim()) {
+        const trimmed = c.trim();
+        const lower = trimmed.toLowerCase();
+        if (!KNOWN_DIETARY_PATTERNS.has(lower) && !isNutritionPreference(trimmed)) {
+          if (!cuisinePreferences.includes(trimmed)) {
+            cuisinePreferences.push(trimmed);
+          }
+        }
+      }
+    }
+  }
 
   for (const item of rawDietary) {
     if (typeof item !== "string") continue;
@@ -191,7 +279,13 @@ export function buildProfileContextFromProfile(input?: RawProfileInput | null): 
       if (lower !== "no specific preference" && !dietaryPattern) {
         dietaryPattern = trimmed;
       }
+    } else if (isNutritionPreference(trimmed)) {
+      // Nutrition / dietary targets (e.g. High Protein, Keto, Low Carb) map to secondaryGoals
+      if (!secondaryGoals.includes(trimmed)) {
+        secondaryGoals.push(trimmed);
+      }
     } else {
+      // Cultural cuisine preferences (e.g. South Indian, North Indian, Pan-Asian, Continental)
       if (!cuisinePreferences.includes(trimmed)) {
         cuisinePreferences.push(trimmed);
       }
@@ -226,7 +320,7 @@ export function buildProfileContextFromProfile(input?: RawProfileInput | null): 
     },
     goals: {
       primaryGoal,
-      secondaryGoals: [], // Future: not currently captured in persistent DB
+      secondaryGoals,
     },
     dietary: {
       dietaryPattern,

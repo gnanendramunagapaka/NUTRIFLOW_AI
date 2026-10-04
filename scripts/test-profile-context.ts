@@ -47,15 +47,22 @@ assert(context1.identity.age === 26, "Age matches");
 assert(context1.body.weight === 74.5, "Weight matches");
 assert(context1.body.height === 178, "Height matches");
 assert(context1.goals.primaryGoal === "Muscle Building & Strength", "Primary goal matches");
-assert(Array.isArray(context1.goals.secondaryGoals) && context1.goals.secondaryGoals.length === 0, "Secondary goals empty");
+assert(
+  Array.isArray(context1.goals.secondaryGoals) &&
+    context1.goals.secondaryGoals.includes("High-Protein Bowls"),
+  "Nutrition target 'High-Protein Bowls' mapped to secondaryGoals"
+);
 
 // Untangling verification
 assert(context1.dietary.dietaryPattern === "Vegetarian", "Dietary pattern isolated from combined array");
 assert(
   context1.dietary.cuisinePreferences.includes("South Indian") &&
-  context1.dietary.cuisinePreferences.includes("Pan-Asian") &&
-  context1.dietary.cuisinePreferences.includes("High-Protein Bowls"),
-  "Cuisines correctly extracted"
+  context1.dietary.cuisinePreferences.includes("Pan-Asian"),
+  "Real cuisines correctly extracted"
+);
+assert(
+  !context1.dietary.cuisinePreferences.includes("High-Protein Bowls"),
+  "Nutrition preference 'High-Protein Bowls' is NEVER emitted as cuisine preference"
 );
 assert(!context1.dietary.cuisinePreferences.includes("Vegetarian"), "Dietary pattern not duplicated in cuisines");
 
@@ -141,5 +148,134 @@ assert(!("tdee" in (context1 as any)), "No TDEE field");
 assert(!("macroDistribution" in (context1 as any)), "No macro distribution field");
 assert(!("medicalConditions" in (context1 as any)), "No medical diagnosis field");
 console.log("  ✓ Boundary Guardrails verified.\n");
+
+// ─── Regression Tests for Onboarding → Profile Context Preference Mapping ──────
+import { evaluateCandidateMatch, type CandidateMatchData } from "../lib/api-zod/src/goalPreferenceMatching.ts";
+
+console.log("Test 5: [Requirement A] 'High Protein' is NEVER emitted as a cuisine preference");
+const highProteinUser: RawProfileInput = {
+  id: "user_hp_1",
+  name: "Protein Focused User",
+  dietaryPreferences: ["High Protein"],
+};
+const hpContext = buildProfileContextFromProfile(highProteinUser);
+ProfileContextSchema.parse(hpContext);
+assert(!hpContext.dietary.cuisinePreferences.includes("High Protein"), "'High Protein' is not in cuisinePreferences");
+assert(hpContext.dietary.cuisinePreferences.length === 0, "cuisinePreferences is completely empty for pure nutrition pref");
+assert(hpContext.goals.secondaryGoals.includes("High Protein"), "'High Protein' is correctly placed in secondaryGoals");
+console.log("  ✓ Test 5 passed: 'High Protein' is never emitted as a cuisine preference.\n");
+
+console.log("Test 6: [Requirement B] Real cuisine selection is emitted as cuisinePreferences");
+const cuisineUser: RawProfileInput = {
+  id: "user_cuisine_1",
+  name: "Cuisine Focused User",
+  dietaryPreferences: ["Vegetarian", "South Indian", "North Indian", "High Protein"],
+};
+const cuisineContext = buildProfileContextFromProfile(cuisineUser);
+ProfileContextSchema.parse(cuisineContext);
+assert(cuisineContext.dietary.dietaryPattern === "Vegetarian", "Dietary pattern is Vegetarian");
+assert(cuisineContext.dietary.cuisinePreferences.includes("South Indian"), "South Indian in cuisinePreferences");
+assert(cuisineContext.dietary.cuisinePreferences.includes("North Indian"), "North Indian in cuisinePreferences");
+assert(!cuisineContext.dietary.cuisinePreferences.includes("High Protein"), "'High Protein' not in cuisinePreferences");
+assert(!cuisineContext.dietary.cuisinePreferences.includes("Vegetarian"), "'Vegetarian' not in cuisinePreferences");
+assert(cuisineContext.goals.secondaryGoals.includes("High Protein"), "'High Protein' in secondaryGoals");
+console.log("  ✓ Test 6 passed: Real cuisines emitted as cuisinePreferences, nutrition preferences kept separate.\n");
+
+console.log("Test 7: [Requirement C] Allergies remain separate from dietary/nutrition and cuisine preferences");
+const allergyUser: RawProfileInput = {
+  id: "user_allergy_1",
+  name: "Allergic User",
+  dietaryPreferences: ["High Protein", "South Indian"],
+  allergies: ["Peanuts", "Shellfish", "None"],
+};
+const allergyContext = buildProfileContextFromProfile(allergyUser);
+assert(allergyContext.dietary.allergies.includes("Peanuts"), "Peanuts in allergies");
+assert(allergyContext.dietary.allergies.includes("Shellfish"), "Shellfish in allergies");
+assert(!allergyContext.dietary.allergies.includes("None"), "'None' sentinel excluded");
+assert(!allergyContext.dietary.cuisinePreferences.includes("Peanuts"), "Allergies not in cuisinePreferences");
+assert(!allergyContext.dietary.allergies.includes("High Protein"), "Nutrition pref not in allergies");
+assert(!allergyContext.dietary.allergies.includes("South Indian"), "Cuisine not in allergies");
+console.log("  ✓ Test 7 passed: Allergies remain strictly separate.\n");
+
+console.log("Test 8: [Requirement D] Primary Goal remains separate from nutrition targets and cuisine preferences");
+const goalUser: RawProfileInput = {
+  id: "user_goal_1",
+  name: "Goal User",
+  goal: "Weight Loss",
+  dietaryPreferences: ["High Protein", "Pan-Asian"],
+};
+const goalContext = buildProfileContextFromProfile(goalUser);
+assert(goalContext.goals.primaryGoal === "Weight Loss", "Primary goal is Weight Loss");
+assert(!goalContext.dietary.cuisinePreferences.includes("Weight Loss"), "Primary goal not in cuisinePreferences");
+assert(!goalContext.dietary.cuisinePreferences.includes("High Protein"), "Nutrition pref not in cuisinePreferences");
+assert(goalContext.dietary.cuisinePreferences.includes("Pan-Asian"), "Pan-Asian in cuisinePreferences");
+assert(goalContext.goals.secondaryGoals.includes("High Protein"), "High Protein in secondaryGoals");
+console.log("  ✓ Test 8 passed: Goals remain strictly separate.\n");
+
+console.log("Test 9: [Requirement E] Existing profile context fields remain compatible");
+const compatUser: RawProfileInput = {
+  id: "user_compat_1",
+  swiggyUserId: "swiggy_123",
+  name: "Compatibility User",
+  email: "compat@test.com",
+  age: 30,
+  weight: 80,
+  height: 182,
+  goal: "Stay Fit & Lean",
+  dietaryPreferences: ["High Protein", "Low Carb", "Keto Friendly"],
+  allergies: ["Dairy / Lactose"],
+  workoutFrequency: "Moderate (3-4 days/week)",
+  waterIntake: "2 - 3 Litres / day",
+  mealHabits: "3 Balanced Meals",
+  budget: "Moderate",
+  wellnessScore: 78,
+  streak: 5,
+};
+const compatContext = buildProfileContextFromProfile(compatUser);
+const parsedCompat = ProfileContextSchema.parse(compatContext);
+assert(parsedCompat.account.userId === "user_compat_1", "userId compatible");
+assert(parsedCompat.account.swiggyUserId === "swiggy_123", "swiggyUserId compatible");
+assert(parsedCompat.account.email === "compat@test.com", "email compatible");
+assert(parsedCompat.body.weight === 80 && parsedCompat.body.height === 182, "body compatible");
+assert(parsedCompat.lifestyle.activityLevel === "Moderate (3-4 days/week)", "lifestyle compatible");
+assert(parsedCompat.goals.secondaryGoals.includes("High Protein"), "High Protein in secondaryGoals");
+assert(parsedCompat.goals.secondaryGoals.includes("Low Carb"), "Low Carb in secondaryGoals");
+assert(parsedCompat.goals.secondaryGoals.includes("Keto Friendly"), "Keto Friendly in secondaryGoals");
+assert(parsedCompat.dietary.cuisinePreferences.length === 0, "No cuisine preferences assumed");
+console.log("  ✓ Test 9 passed: Full backward compatibility confirmed.\n");
+
+console.log("Test 10: [Requirement F] Recommendation matching no longer produces CUISINE_MISMATCH for 'High Protein' user");
+const liveRestaurantCandidate: CandidateMatchData = {
+  id: "food-rst-reddys-kitchen",
+  name: "Reddy's Kitchen",
+  cuisineTags: ["South Indian", "Biryani"],
+};
+// User only has "High Protein" as dietary preference
+const hpMatchResult = evaluateCandidateMatch(hpContext, liveRestaurantCandidate);
+assert(hpMatchResult.cuisineMatch === "neutral", `Expected neutral cuisineMatch, got ${hpMatchResult.cuisineMatch}`);
+assert(
+  !hpMatchResult.signals.some((s) => s.code === "CUISINE_MISMATCH"),
+  "CUISINE_MISMATCH must NOT be emitted for user with High Protein"
+);
+console.log("  ✓ Test 10 passed: Recommendation matching produces neutral cuisine match (NO CUISINE_MISMATCH) for 'High Protein' user.\n");
+
+console.log("Test 11: [Requirement G] Missing cuisine preference remains UNKNOWN/neutral rather than negative");
+const candidateWithCuisine: CandidateMatchData = {
+  id: "food-rst-any",
+  name: "Any Restaurant",
+  cuisineTags: ["Continental", "Italian"],
+};
+const noCuisineUserContext = buildProfileContextFromProfile({
+  id: "user_no_cuisine",
+  name: "No Cuisine Preference User",
+  dietaryPreferences: ["No Specific Preference"],
+});
+const noCuisineMatchResult = evaluateCandidateMatch(noCuisineUserContext, candidateWithCuisine);
+assert(noCuisineMatchResult.cuisineMatch === "neutral", `Expected neutral cuisineMatch, got ${noCuisineMatchResult.cuisineMatch}`);
+assert(
+  !noCuisineMatchResult.signals.some((s) => s.code === "CUISINE_MISMATCH"),
+  "CUISINE_MISMATCH must NOT be produced when user has no cuisine preferences"
+);
+console.log("  ✓ Test 11 passed: Missing cuisine preference remains neutral rather than negative.\n");
 
 console.log("🎉 ALL TESTS PASSED SUCCESSFULLY!");
